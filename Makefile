@@ -112,8 +112,27 @@ flamegraph: build $(ENVOY_BIN)
 	@echo "Open flamegraph:"
 	@echo "  go tool pprof -alloc_objects -http=:8080 bench/profiles/allocs_$(EXAMPLE).out"
 
-# Run unit tests and benchmarks (no Envoy needed)
-.PHONY: test
+# Start otel-front (local OTLP receiver + browser UI)
+# Receives on gRPC :4317, HTTP :4318, serves UI on :8000
+.PHONY: otel-front
+otel-front:
+	@echo "Starting otel-front..."
+	@echo "  UI:        http://localhost:8000"
+	@echo "  OTLP gRPC: localhost:4317"
+	@echo "  OTLP HTTP: localhost:4318"
+	otel-front
+
+# Start Envoy wired to otel-front (metrics + traces + enriched logs).
+# Requires: make otel-front running in another terminal.
+# Uses examples/observability/envoy-otel.yaml with stats sink + OTel tracer.
+.PHONY: observe
+observe: build $(ENVOY_BIN)
+	@echo "Open otel-front UI: http://localhost:8000"
+	GODEBUG=cgocheck=0 \
+	ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(CURDIR)/dist \
+	$(ENVOY_BIN) -c examples/observability/envoy-otel.yaml --log-level warning
+
+
 test:
 	go test -race ./...
 

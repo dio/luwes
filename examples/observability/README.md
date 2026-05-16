@@ -88,6 +88,45 @@ The filter also calls `handle.Log(LogLevelDebug, ...)` for filter-level events,
 guarded by `handle.LogEnabled(LogLevelDebug)` to avoid boxing arguments when
 debug logging is disabled.
 
+## Local visualization with otel-front
+
+[otel-front](https://github.com/krzko/otel-front) is a local OTLP receiver with a browser UI backed by DuckDB. No Docker, no Prometheus, no Grafana. Install it once and use it across all luwes examples.
+
+```sh
+brew install krzko/tap/otel-front
+```
+
+Start it:
+
+```sh
+make otel-front
+# or directly:
+otel-front
+```
+
+Then in a separate terminal, run Envoy with the full OTel config:
+
+```sh
+make observe EXAMPLE=observability
+```
+
+Open the UI at http://localhost:8000. After a few requests you will see:
+
+- **Metrics**: `dynamicmodulescustom.luwes_observability_requests_total` and `luwes_observability_handler_duration_ms` from the filter, plus all standard Envoy stats flushed every 5 seconds.
+- **Traces**: One trace per request with `service_name: luwes-observability`. The filter spawns a child span `luwes.observability.request` tagged with the HTTP method.
+- **Logs**: Access log entries with `luwes.method`, `luwes.path`, and `luwes.status` attributes from `SetMetadata`.
+
+Send some requests to populate the UI:
+
+```sh
+for i in $(seq 1 20); do curl -s http://localhost:10000/v1/test > /dev/null; done
+```
+
+The `envoy-otel.yaml` config wires:
+- Envoy's OTel tracer (OTLP gRPC to localhost:4317) for traces
+- Envoy's OTel stats sink (OTLP gRPC, 5-second flush) for metrics
+- Envoy's OTel access log exporter (OTLP gRPC) for enriched log records with `DYNAMIC_METADATA` fields
+
 ## Prerequisites
 
 - Go 1.22+ with CGO enabled

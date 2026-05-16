@@ -1,0 +1,135 @@
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10000 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress
+
+                # Tracing: export spans to otel-front via OTLP gRPC.
+                # otel-front receives on localhost:4317 (gRPC) and localhost:4318 (HTTP).
+                # The filter calls GetActiveSpan() to read this span and add tags.
+                generate_request_id: true
+                tracing:
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_front_grpc
+                        timeout: 0.250s
+                      service_name: luwes-observability
+
+                # Access log: stdout + OTel exporter.
+                # The luwes filter writes luwes.method, luwes.path, luwes.status
+                # via SetMetadata. The text format reads them via DYNAMIC_METADATA.
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format_source:
+                          inline_string: |
+                            [%START_TIME%] %REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %RESPONSE_CODE% %DURATION%ms luwes.method=%DYNAMIC_METADATA(luwes:method)% luwes.status=%DYNAMIC_METADATA(luwes:status)%
+
+                  - name: envoy.access_loggers.open_telemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+                      common_config:
+                        log_name: luwes_access_log
+                        grpc_service:
+                          envoy_grpc:
+                            cluster_name: otel_front_grpc
+                          timeout: 0.250s
+                        transport_api_version: V3
+                      body:
+                        string_value: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %RESPONSE_CODE%"
+                      attributes:
+                        values:
+                          - key: http.method
+                            value:
+                              string_value: "%REQ(:METHOD)%"
+                          - key: http.url
+                            value:
+                              string_value: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                          - key: http.status_code
+                            value:
+                              string_value: "%RESPONSE_CODE%"
+                          - key: luwes.method
+                            value:
+                              string_value: "%DYNAMIC_METADATA(luwes:method)%"
+                          - key: luwes.path
+                            value:
+                              string_value: "%DYNAMIC_METADATA(luwes:path)%"
+                          - key: luwes.status
+                            value:
+                              string_value: "%DYNAMIC_METADATA(luwes:status)%"
+                          - key: duration_ms
+                            value:
+                              string_value: "%DURATION%"
+
+                http_filters:
+                  - name: observability
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: observability
+                      filter_name: observability
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: local
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "ok" }
+
+  clusters:
+    # otel-front OTLP gRPC receiver on localhost:4317
+    - name: otel_front_grpc
+      type: STATIC
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: otel_front_grpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4317
+
+# Stats sink: export Envoy's own stats (including dynamicmodulescustom.* metrics)
+# to otel-front via OTLP gRPC. Flushes every 5 seconds.
+stats_sinks:
+  - name: envoy.stat_sinks.open_telemetry
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.stat_sinks.open_telemetry.v3.SinkConfig
+      grpc_service:
+        envoy_grpc:
+          cluster_name: otel_front_grpc
+        timeout: 0.250s
+      prefix: envoy
+
+stats_flush_interval: 5s
+
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
