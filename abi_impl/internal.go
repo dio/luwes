@@ -152,6 +152,9 @@ func envoyBufferToUnsafeEnvoyBuffer(buf C.envoy_dynamic_module_type_envoy_buffer
 	}
 }
 
+// envoyHttpHeaderSliceToUnsafeHeaderSlice converts a C header array (already
+// fetched from Envoy) into a Go UnsafeEnvoyBuffer slice. Used by callout and
+// stream callbacks where the C slice is provided by Envoy, not locally allocated.
 func envoyHttpHeaderSliceToUnsafeHeaderSlice(
 	buf []C.envoy_dynamic_module_type_envoy_http_header,
 ) [][2]shared.UnsafeEnvoyBuffer {
@@ -165,6 +168,9 @@ func envoyHttpHeaderSliceToUnsafeHeaderSlice(
 	return headers
 }
 
+// envoyBufferSliceToUnsafeEnvoyBufferSlice converts a C buffer array (already
+// fetched from Envoy) into a Go UnsafeEnvoyBuffer slice. Used by callout and
+// stream callbacks where the C slice is provided by Envoy, not locally allocated.
 func envoyBufferSliceToUnsafeEnvoyBufferSlice(
 	buf []C.envoy_dynamic_module_type_envoy_buffer,
 ) []shared.UnsafeEnvoyBuffer {
@@ -223,7 +229,13 @@ func (h *dymHeaderMap) Get(key string) []shared.UnsafeEnvoyBuffer {
 
 	firstValue := h.getSingleHeader(key, 0, &valueCount)
 	if valueCount == 0 {
-		return []shared.UnsafeEnvoyBuffer{}
+		return nil // callers check len(result) > 0, so nil and empty slice are equivalent
+	}
+
+	// Single-value fast path: avoid make() for the common case.
+	// HTTP headers with multiple values for the same key are rare.
+	if valueCount == 1 {
+		return []shared.UnsafeEnvoyBuffer{firstValue}
 	}
 
 	values := make([]shared.UnsafeEnvoyBuffer, 0, valueCount)
@@ -241,6 +253,11 @@ func (h *dymHeaderMap) GetOne(key string) shared.UnsafeEnvoyBuffer {
 	return h.getSingleHeader(key, 0, nil)
 }
 
+// maxStackHeaders is the threshold below which GetAll uses a stack-allocated
+// scratch array for the C fetch instead of a heap allocation.
+// 32 headers * 32 bytes = 1024 bytes on the goroutine stack.
+const maxStackHeaders = 32
+
 func (h *dymHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 	headerCount := C.envoy_dynamic_module_callback_http_get_headers_size(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(h.hostPluginPtr),
@@ -250,15 +267,34 @@ func (h *dymHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 		return nil
 	}
 
-	resultHeaders := make([]C.envoy_dynamic_module_type_envoy_http_header, headerCount)
+	// Use a stack-local scratch array for the C fetch when header count is small.
+	// This eliminates one heap allocation per call for the overwhelming majority
+	// of real-world requests. Fall back to make() only for unusually large header sets.
+	var stackBuf [maxStackHeaders]C.envoy_dynamic_module_type_envoy_http_header
+	var cHeaders []C.envoy_dynamic_module_type_envoy_http_header
+	if int(headerCount) <= maxStackHeaders {
+		cHeaders = stackBuf[:headerCount]
+	} else {
+		cHeaders = make([]C.envoy_dynamic_module_type_envoy_http_header, headerCount)
+	}
+
 	C.envoy_dynamic_module_callback_http_get_headers(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(h.hostPluginPtr),
 		(C.envoy_dynamic_module_type_http_header_type)(h.headerType),
-		unsafe.SliceData(resultHeaders),
+		unsafe.SliceData(cHeaders),
 	)
-	finalResult := envoyHttpHeaderSliceToUnsafeHeaderSlice(resultHeaders)
-	runtime.KeepAlive(resultHeaders)
-	return finalResult
+	runtime.KeepAlive(cHeaders)
+
+	// Convert C headers into Go-owned result slice.
+	// One allocation for the output; the C scratch is on the stack.
+	result := make([][2]shared.UnsafeEnvoyBuffer, len(cHeaders))
+	for i, hdr := range cHeaders {
+		result[i] = [2]shared.UnsafeEnvoyBuffer{
+			{Ptr: (*byte)(unsafe.Pointer(hdr.key_ptr)), Len: uint64(hdr.key_length)},
+			{Ptr: (*byte)(unsafe.Pointer(hdr.value_ptr)), Len: uint64(hdr.value_length)},
+		}
+	}
+	return result
 }
 
 func (h *dymHeaderMap) Set(key, value string) {
@@ -299,25 +335,46 @@ type dymBodyBuffer struct {
 	bufferType    C.envoy_dynamic_module_type_http_body_type
 }
 
+// maxStackChunks is the threshold below which GetChunks uses a stack-allocated
+// scratch array for the C fetch instead of a heap allocation.
+// 16 chunks * 16 bytes = 256 bytes on the goroutine stack.
+// Body typically arrives in 1-4 chunks; 16 covers all realistic streaming cases.
+const maxStackChunks = 16
+
 func (b *dymBodyBuffer) GetChunks() []shared.UnsafeEnvoyBuffer {
-	var chunksSize C.size_t = 0
 	size := C.envoy_dynamic_module_callback_http_get_body_chunks_size(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(b.hostPluginPtr),
 		(C.envoy_dynamic_module_type_http_body_type)(b.bufferType),
 	)
-	chunksSize = size
-	if chunksSize == 0 {
+	if size == 0 {
 		return nil
 	}
 
-	resultChunks := make([]C.envoy_dynamic_module_type_envoy_buffer, chunksSize)
+	// Stack scratch for the C fetch -- same pattern as GetAll.
+	// Eliminates one heap allocation per OnRequestBody/OnResponseBody call.
+	var stackBuf [maxStackChunks]C.envoy_dynamic_module_type_envoy_buffer
+	var cChunks []C.envoy_dynamic_module_type_envoy_buffer
+	if int(size) <= maxStackChunks {
+		cChunks = stackBuf[:size]
+	} else {
+		cChunks = make([]C.envoy_dynamic_module_type_envoy_buffer, size)
+	}
+
 	C.envoy_dynamic_module_callback_http_get_body_chunks(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(b.hostPluginPtr),
 		(C.envoy_dynamic_module_type_http_body_type)(b.bufferType),
-		unsafe.SliceData(resultChunks),
+		unsafe.SliceData(cChunks),
 	)
-	runtime.KeepAlive(resultChunks)
-	return envoyBufferSliceToUnsafeEnvoyBufferSlice(resultChunks)
+	runtime.KeepAlive(cChunks)
+
+	result := make([]shared.UnsafeEnvoyBuffer, len(cChunks))
+	for i, chunk := range cChunks {
+		result[i] = shared.UnsafeEnvoyBuffer{
+			Ptr: (*byte)(unsafe.Pointer(chunk.ptr)),
+			Len: uint64(chunk.length),
+		}
+	}
+	return result
 }
 
 func (b *dymBodyBuffer) GetSize() uint64 {
