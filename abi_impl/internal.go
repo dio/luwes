@@ -253,11 +253,6 @@ func (h *dymHeaderMap) GetOne(key string) shared.UnsafeEnvoyBuffer {
 	return h.getSingleHeader(key, 0, nil)
 }
 
-// maxStackHeaders is the threshold below which GetAll uses a stack-allocated
-// scratch array for the C fetch instead of a heap allocation.
-// 32 headers * 32 bytes = 1024 bytes on the goroutine stack.
-const maxStackHeaders = 32
-
 func (h *dymHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 	headerCount := C.envoy_dynamic_module_callback_http_get_headers_size(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(h.hostPluginPtr),
@@ -267,26 +262,12 @@ func (h *dymHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 		return nil
 	}
 
-	// Use a stack-local scratch array for the C fetch when header count is small.
-	// This eliminates one heap allocation per call for the overwhelming majority
-	// of real-world requests. Fall back to make() only for unusually large header sets.
-	var stackBuf [maxStackHeaders]C.envoy_dynamic_module_type_envoy_http_header
-	var cHeaders []C.envoy_dynamic_module_type_envoy_http_header
-	if int(headerCount) <= maxStackHeaders {
-		cHeaders = stackBuf[:headerCount]
-	} else {
-		cHeaders = make([]C.envoy_dynamic_module_type_envoy_http_header, headerCount)
-	}
-
+	cHeaders := make([]C.envoy_dynamic_module_type_envoy_http_header, headerCount)
 	C.envoy_dynamic_module_callback_http_get_headers(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(h.hostPluginPtr),
 		(C.envoy_dynamic_module_type_http_header_type)(h.headerType),
 		unsafe.SliceData(cHeaders),
 	)
-	runtime.KeepAlive(cHeaders)
-
-	// Convert C headers into Go-owned result slice.
-	// One allocation for the output; the C scratch is on the stack.
 	result := make([][2]shared.UnsafeEnvoyBuffer, len(cHeaders))
 	for i, hdr := range cHeaders {
 		result[i] = [2]shared.UnsafeEnvoyBuffer{
@@ -294,6 +275,7 @@ func (h *dymHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 			{Ptr: (*byte)(unsafe.Pointer(hdr.value_ptr)), Len: uint64(hdr.value_length)},
 		}
 	}
+	runtime.KeepAlive(cHeaders)
 	return result
 }
 
@@ -335,12 +317,6 @@ type dymBodyBuffer struct {
 	bufferType    C.envoy_dynamic_module_type_http_body_type
 }
 
-// maxStackChunks is the threshold below which GetChunks uses a stack-allocated
-// scratch array for the C fetch instead of a heap allocation.
-// 16 chunks * 16 bytes = 256 bytes on the goroutine stack.
-// Body typically arrives in 1-4 chunks; 16 covers all realistic streaming cases.
-const maxStackChunks = 16
-
 func (b *dymBodyBuffer) GetChunks() []shared.UnsafeEnvoyBuffer {
 	size := C.envoy_dynamic_module_callback_http_get_body_chunks_size(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(b.hostPluginPtr),
@@ -350,23 +326,12 @@ func (b *dymBodyBuffer) GetChunks() []shared.UnsafeEnvoyBuffer {
 		return nil
 	}
 
-	// Stack scratch for the C fetch -- same pattern as GetAll.
-	// Eliminates one heap allocation per OnRequestBody/OnResponseBody call.
-	var stackBuf [maxStackChunks]C.envoy_dynamic_module_type_envoy_buffer
-	var cChunks []C.envoy_dynamic_module_type_envoy_buffer
-	if int(size) <= maxStackChunks {
-		cChunks = stackBuf[:size]
-	} else {
-		cChunks = make([]C.envoy_dynamic_module_type_envoy_buffer, size)
-	}
-
+	cChunks := make([]C.envoy_dynamic_module_type_envoy_buffer, size)
 	C.envoy_dynamic_module_callback_http_get_body_chunks(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(b.hostPluginPtr),
 		(C.envoy_dynamic_module_type_http_body_type)(b.bufferType),
 		unsafe.SliceData(cChunks),
 	)
-	runtime.KeepAlive(cChunks)
-
 	result := make([]shared.UnsafeEnvoyBuffer, len(cChunks))
 	for i, chunk := range cChunks {
 		result[i] = shared.UnsafeEnvoyBuffer{
@@ -374,6 +339,7 @@ func (b *dymBodyBuffer) GetChunks() []shared.UnsafeEnvoyBuffer {
 			Len: uint64(chunk.length),
 		}
 	}
+	runtime.KeepAlive(cChunks)
 	return result
 }
 
@@ -1114,6 +1080,7 @@ func (h *dymHttpFilterHandle) SendResponseTrailers(
 	trailers [][2]string,
 ) {
 	// Prepare trailers.
+	// Prepare trailers.
 	trailerViews := headersToModuleHttpHeaderSlice(trailers)
 	C.envoy_dynamic_module_callback_http_send_response_trailers(
 		h.hostPluginPtr,
@@ -1407,6 +1374,12 @@ func (h *dymHttpFilterHandle) Log(level shared.LogLevel, format string, args ...
 	hostLog(level, format, args)
 }
 
+func (h *dymHttpFilterHandle) LogEnabled(level shared.LogLevel) bool {
+	return bool(C.envoy_dynamic_module_callback_log_enabled(
+		(C.envoy_dynamic_module_type_log_level)(uint32(level)),
+	))
+}
+
 func (h *dymHttpFilterHandle) HttpCallout(
 	cluster string, headers [][2]string, body []byte, timeoutMs uint64,
 	cb shared.HttpCalloutCallback) (shared.HttpCalloutInitResult, uint64) {
@@ -1494,6 +1467,7 @@ func (h *dymHttpFilterHandle) SendHttpStreamData(
 func (h *dymHttpFilterHandle) SendHttpStreamTrailers(
 	streamID uint64, trailers [][2]string,
 ) bool {
+	// Prepare trailers.
 	// Prepare trailers.
 	trailerViews := headersToModuleHttpHeaderSlice(trailers)
 	ret := C.envoy_dynamic_module_callback_http_stream_send_trailers(
@@ -1844,6 +1818,7 @@ func (h *dymConfigHandle) SendHttpStreamData(streamID uint64, data []byte, endOf
 }
 
 func (h *dymConfigHandle) SendHttpStreamTrailers(streamID uint64, trailers [][2]string) bool {
+	// Prepare trailers.
 	trailerViews := headersToModuleHttpHeaderSlice(trailers)
 	ret := C.envoy_dynamic_module_callback_http_filter_config_stream_send_trailers(
 		h.hostConfigPtr,

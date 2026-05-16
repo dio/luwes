@@ -677,6 +677,11 @@ type HttpFilterHandle interface {
 	// Log will log the given message via the host environment's logging mechanism.
 	Log(level LogLevel, format string, args ...any)
 
+	// LogEnabled reports whether logging at the given level is active.
+	// Use this to guard expensive log argument construction on the hot path,
+	// avoiding interface boxing when the log level is disabled.
+	LogEnabled(level LogLevel) bool
+
 	// HttpCallout performs an HTTP call to an external service. The call is asynchronous, and the
 	// response will be delivered via the provided callback.
 	// @Param cluster the cluster (target) name to which the HTTP call will be made.

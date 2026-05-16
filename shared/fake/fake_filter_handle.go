@@ -199,6 +199,7 @@ func (h *FakeFilterHandle) GetMostSpecificConfig() any  { return nil }
 // -- Logging --
 
 func (h *FakeFilterHandle) Log(_ shared.LogLevel, _ string, _ ...any) {}
+func (h *FakeFilterHandle) LogEnabled(_ shared.LogLevel) bool         { return false }
 
 // -- Scheduler (no-op -- use e2e tests for async behaviour) --
 
