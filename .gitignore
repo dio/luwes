@@ -1,0 +1,5 @@
+.bin/
+dist/
+bench/mem.out
+bench/results.txt
+*.h.bak
