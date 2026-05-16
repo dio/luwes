@@ -1610,15 +1610,15 @@ func (h *dymHttpFilterHandle) reset(
 ) {
 	h.hostPluginPtr = hostPluginPtr
 
-	// Invariant checks: a correctly returned handle must have nil plugin and
-	// scheduler by the time it re-enters the pool. These catch use-after-Put
-	// bugs where filter code or the ABI layer accesses the handle after
-	// OnStreamComplete. Cost: one branch per request -- negligible.
+	// Invariant checks: a handle coming off the pool must have nil plugin and
+	// scheduler. The destroy callback zeros both before Put, so a non-nil value
+	// here means something accessed the handle after it was returned -- a
+	// use-after-Put bug that would silently corrupt the next request's state.
 	if h.plugin != nil {
-		panic("BUG: luwes handle pool: plugin not nil on Get -- handle was accessed after Put")
+		panic("BUG: handle pool corruption: plugin field still set when handle was reused from pool")
 	}
 	if h.scheduler != nil {
-		panic("BUG: luwes handle pool: scheduler not nil on Get -- handle was Put without scheduler cleanup")
+		panic("BUG: handle pool corruption: scheduler field still set when handle was reused from pool")
 	}
 
 	// Overwrite embedded value-type structs with the new hostPluginPtr.
@@ -1987,11 +1987,13 @@ func envoy_dynamic_module_on_http_filter_destroy(
 		pluginWrapper.plugin.OnDestroy()
 	}
 	pluginManager.remove(unsafe.Pointer(pluginPtr))
-	// Only return to pool here if stream_complete did NOT already do so.
-	// stream_complete sets streamCompleted=true before Put; destroy checks it.
-	if !pluginWrapper.streamCompleted {
-		dymHttpFilterHandlePool.Put(pluginWrapper)
-	}
+	// destroy is the last callback Envoy calls for a filter instance.
+	// It is safe to return the handle to the pool here regardless of whether
+	// stream_complete already ran. Zero plugin before Put so the pool assertion
+	// in reset() does not fire on the next Get.
+	pluginWrapper.plugin = nil
+	pluginWrapper.scheduler = nil
+	dymHttpFilterHandlePool.Put(pluginWrapper)
 }
 
 //export envoy_dynamic_module_on_http_filter_request_headers
@@ -2089,11 +2091,11 @@ func envoy_dynamic_module_on_http_filter_stream_complete(
 	}
 	pluginWrapper.streamCompleted = true
 	pluginWrapper.clearData()
-	pluginWrapper.scheduler = nil
 	pluginWrapper.plugin.OnStreamComplete()
-	// Return to pool AFTER OnStreamComplete -- the filter may read handle fields
-	// inside OnStreamComplete. After this point the handle must not be accessed.
-	dymHttpFilterHandlePool.Put(pluginWrapper)
+	// Do NOT return to pool here. Envoy may still call on_http_filter_destroy
+	// after stream_complete on some code paths. The destroy callback is the
+	// single safe point for pool return since it is the last callback Envoy
+	// will ever make for this filter instance.
 }
 
 //export envoy_dynamic_module_on_http_filter_scheduled
