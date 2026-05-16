@@ -1,0 +1,106 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5
+        with:
+          go-version-file: go.mod
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race ./...
+
+  bench:
+    name: bench (alloc baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5
+        with:
+          go-version-file: go.mod
+
+      - name: benchmark
+        run: go test -bench=. -benchmem -count=3 ./bench/ | tee bench/results.txt
+
+      - name: upload bench results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bench-results
+          path: bench/results.txt
+
+  build-linux:
+    name: cross-compile linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5
+        with:
+          go-version-file: go.mod
+
+      - name: cache zig
+        id: cache-zig
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: /tmp/zig
+          key: zig-0.16.0-x86_64-linux
+
+      - name: download zig
+        if: steps.cache-zig.outputs.cache-hit != 'true'
+        run: |
+          URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+          curl -fsSL "$URL" | tar -xJ -C /tmp
+          mv /tmp/zig-x86_64-linux-0.16.0 /tmp/zig
+
+      - name: build linux amd64
+        run: |
+          mkdir -p dist
+          TARGET=x86_64-linux-gnu.2.28 \
+          ZIG=/tmp/zig/zig \
+          CC=$(pwd)/scripts/zigcc.sh \
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+          go build -trimpath -buildmode=c-shared \
+            -o dist/libheader-auth.linux-amd64.so ./examples/header-auth/cmd
+
+      - name: verify ELF
+        run: file dist/libheader-auth.linux-amd64.so | grep -q 'ELF 64-bit' && echo "OK"
+
+      - name: upload .so
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: header-auth-linux-amd64
+          path: dist/libheader-auth.linux-amd64.so
+
+  abi-drift:
+    name: check abi drift (weekly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: check drift
+        run: |
+          LATEST=$(curl -fsSL https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h)
+          if ! diff -q <(echo "$LATEST") abi/abi.h > /dev/null 2>&1; then
+            echo "::warning::abi.h has drifted from envoy/main -- run: make sync-abi"
+            diff <(echo "$LATEST") abi/abi.h | head -60 || true
+          else
+            echo "abi.h is in sync with envoy/main"
+          fi
