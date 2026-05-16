@@ -7,32 +7,43 @@
 package headerauth
 
 import (
+	"sync"
+
 	"github.com/dio/luwes/shared"
 )
 
 // Filter is a per-request filter instance.
 type Filter struct {
 	shared.EmptyHttpFilter
-	handle shared.HttpFilterHandle
+	handle  shared.HttpFilterHandle
+	factory *Factory // back-pointer to return to pool
 }
 
-// Factory is created once per filter config. Holds the counter metric ID.
+// Factory is created once per filter config. Holds the counter metric ID
+// and a pool of Filter instances.
 type Factory struct {
 	counter shared.MetricID
+	pool    sync.Pool
 }
 
 // NewFactory parses config and defines metrics. Called once at Envoy config load.
 func NewFactory(h shared.HttpFilterConfigHandle, _ []byte) (*Factory, error) {
-	id, res := h.DefineCounter("header_auth_requests_total", "result")
-	if res != shared.MetricsSuccess {
-		return nil, nil // non-fatal: metrics unavailable in test/fake env
+	f := &Factory{}
+	f.pool.New = func() any { return &Filter{factory: f} }
+	if h != nil {
+		id, res := h.DefineCounter("header_auth_requests_total", "result")
+		if res == shared.MetricsSuccess {
+			f.counter = id
+		}
 	}
-	return &Factory{counter: id}, nil
+	return f, nil
 }
 
-// Create returns a new filter for each request.
+// Create returns a pooled filter for the request.
 func (f *Factory) Create(handle shared.HttpFilterHandle) shared.HttpFilter {
-	return &Filter{handle: handle}
+	filter := f.pool.Get().(*Filter)
+	filter.handle = handle
+	return filter
 }
 
 func (f *Factory) OnDestroy() {}
@@ -65,4 +76,7 @@ func (f *Filter) OnResponseBody(_ shared.BodyBuffer, _ bool) shared.BodyStatus {
 func (f *Filter) OnResponseTrailers(_ shared.HeaderMap) shared.TrailersStatus {
 	return shared.TrailersStatusDefault
 }
-func (f *Filter) OnStreamComplete() {}
+func (f *Filter) OnStreamComplete() {
+	f.handle = nil
+	f.factory.pool.Put(f)
+}

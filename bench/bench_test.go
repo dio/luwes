@@ -39,7 +39,8 @@ func (f *fakeConfigHandle) GetScheduler() shared.Scheduler                      
 // This is the most common case. Should converge toward 0 allocs/op post-optimization.
 func BenchmarkHeaderAuthAccept(b *testing.B) {
 	factory, _ := headerauth.NewFactory(&fakeConfigHandle{}, nil)
-	fh := fake.NewFilterHandle(
+	// BenchFilterHandle: zero-alloc Set/Add -- no mutation recording noise.
+	fh := fake.NewBenchFilterHandle(
 		fake.WithHeaders(map[string]string{
 			"x-api-key":    "secret-key-abc",
 			":path":        "/v1/chat/completions",

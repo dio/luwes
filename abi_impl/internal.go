@@ -1555,45 +1555,68 @@ func (h *dymHttpFilterHandle) IncrementCounterValue(id shared.MetricID,
 	return shared.MetricsResult(ret)
 }
 
+// dymHttpFilterHandlePool is a pool of *dymHttpFilterHandle.
+// Eliminates one heap allocation per request on the hot path.
+// sync.Pool is non-deterministic -- the GC may clear it at any cycle.
+// That is intentional: we never need a handle to outlive a request.
+var dymHttpFilterHandlePool = sync.Pool{
+	New: func() any { return &dymHttpFilterHandle{} },
+}
+
 func newDymStreamPluginHandle(
 	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr,
 ) *dymHttpFilterHandle {
-	pluginHandle := &dymHttpFilterHandle{
-		hostPluginPtr: hostPluginPtr,
-		requestHeaderMap: dymHeaderMap{
-			hostPluginPtr: hostPluginPtr,
-			headerType:    C.envoy_dynamic_module_type_http_header_type(0),
-		},
-		requestTrailerMap: dymHeaderMap{
-			hostPluginPtr: hostPluginPtr,
-			headerType:    C.envoy_dynamic_module_type_http_header_type(1),
-		},
-		responseHeaderMap: dymHeaderMap{
-			hostPluginPtr: hostPluginPtr,
-			headerType:    C.envoy_dynamic_module_type_http_header_type(2),
-		},
-		responseTrailerMap: dymHeaderMap{
-			hostPluginPtr: hostPluginPtr,
-			headerType:    C.envoy_dynamic_module_type_http_header_type(3),
-		},
-		receivedRequestBody: dymBodyBuffer{
-			hostPluginPtr: hostPluginPtr,
-			bufferType:    C.envoy_dynamic_module_type_http_body_type(0),
-		},
-		bufferedRequestBody: dymBodyBuffer{
-			hostPluginPtr: hostPluginPtr,
-			bufferType:    C.envoy_dynamic_module_type_http_body_type(1),
-		},
-		receivedResponseBody: dymBodyBuffer{
-			hostPluginPtr: hostPluginPtr,
-			bufferType:    C.envoy_dynamic_module_type_http_body_type(2),
-		},
-		bufferedResponseBody: dymBodyBuffer{
-			hostPluginPtr: hostPluginPtr,
-			bufferType:    C.envoy_dynamic_module_type_http_body_type(3),
-		},
+	h := dymHttpFilterHandlePool.Get().(*dymHttpFilterHandle)
+	h.reset(hostPluginPtr)
+	return h
+}
+
+// reset prepares a pooled handle for reuse with a new request.
+// All per-request state is cleared. Backing arrays (recordedSharedData) are
+// preserved to avoid reallocating on the next request.
+func (h *dymHttpFilterHandle) reset(
+	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr,
+) {
+	h.hostPluginPtr = hostPluginPtr
+
+	// Invariant checks: a correctly returned handle must have nil plugin and
+	// scheduler by the time it re-enters the pool. These catch use-after-Put
+	// bugs where filter code or the ABI layer accesses the handle after
+	// OnStreamComplete. Cost: one branch per request -- negligible.
+	if h.plugin != nil {
+		panic("BUG: luwes handle pool: plugin not nil on Get -- handle was accessed after Put")
 	}
-	return pluginHandle
+	if h.scheduler != nil {
+		panic("BUG: luwes handle pool: scheduler not nil on Get -- handle was Put without scheduler cleanup")
+	}
+
+	// Overwrite embedded value-type structs with the new hostPluginPtr.
+	// Header/body type constants are fixed by the ABI.
+	h.requestHeaderMap  = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(0)}
+	h.requestTrailerMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(1)}
+	h.responseHeaderMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(2)}
+	h.responseTrailerMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(3)}
+
+	h.receivedRequestBody  = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(0)}
+	h.bufferedRequestBody  = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(1)}
+	h.receivedResponseBody = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(2)}
+	h.bufferedResponseBody = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(3)}
+
+	// Zero per-request state.
+	h.plugin            = nil
+	h.scheduler         = nil
+	h.streamCompleted   = false
+	h.streamDestoried   = false
+	h.localResponseSent = false
+
+	// nil maps -- lazy-init on first callout/stream use.
+	h.calloutCallbacks = nil
+	h.streamCallbacks  = nil
+
+	// Reset slice length, preserve backing array capacity.
+	h.recordedSharedData = h.recordedSharedData[:0]
+
+	h.downstreamWatermarkCallbacks = nil
 }
 
 type dymConfigHandle struct {
@@ -1932,6 +1955,11 @@ func envoy_dynamic_module_on_http_filter_destroy(
 		pluginWrapper.plugin.OnDestroy()
 	}
 	pluginManager.remove(unsafe.Pointer(pluginPtr))
+	// Only return to pool here if stream_complete did NOT already do so.
+	// stream_complete sets streamCompleted=true before Put; destroy checks it.
+	if !pluginWrapper.streamCompleted {
+		dymHttpFilterHandlePool.Put(pluginWrapper)
+	}
 }
 
 //export envoy_dynamic_module_on_http_filter_request_headers
@@ -2031,6 +2059,9 @@ func envoy_dynamic_module_on_http_filter_stream_complete(
 	pluginWrapper.clearData()
 	pluginWrapper.scheduler = nil
 	pluginWrapper.plugin.OnStreamComplete()
+	// Return to pool AFTER OnStreamComplete -- the filter may read handle fields
+	// inside OnStreamComplete. After this point the handle must not be accessed.
+	dymHttpFilterHandlePool.Put(pluginWrapper)
 }
 
 //export envoy_dynamic_module_on_http_filter_scheduled
