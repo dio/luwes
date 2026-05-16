@@ -1,0 +1,39 @@
+luwes
+Copyright 2026 Dhi Aurrahman and the luwes authors
+
+Licensed under Apache License 2.0. See LICENSE for terms.
+
+---
+
+This project includes material derived from the Envoy Proxy project.
+
+  Envoy
+  Copyright The Envoy Project Authors
+  https://github.com/envoyproxy/envoy
+  Licensed under Apache License 2.0
+
+Specifically, the following files are derived from or contain verbatim
+content from the Envoy source tree:
+
+  abi/abi.h
+    Vendored from envoyproxy/envoy at the commit recorded in abi/VERSION.
+    This file defines the C ABI for Envoy dynamic modules and is reproduced
+    here under the same Apache 2.0 license.
+
+  abi_impl/internal.go
+  abi_impl/network.go
+  shared/api.go
+  shared/base.go
+  shared/network_api.go
+  shared/network_base.go
+  shared/utility/utility.go
+  shared/fake/fake_stream_base.go
+  shared/mocks/mock_api.go
+  shared/mocks/mock_base.go
+  sdk.go
+    Derived from envoyproxy/envoy/source/extensions/dynamic_modules/sdk/go/.
+    Modifications copyright 2026 Dhi Aurrahman and the luwes authors.
+    Notable modifications include the handle pool, stack-scratch optimizations,
+    and updated import paths. See git history for the full change record.
+
+The full text of the Apache License 2.0 is available in the LICENSE file.
