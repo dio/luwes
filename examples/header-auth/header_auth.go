@@ -27,7 +27,7 @@ type Factory struct {
 }
 
 // NewFactory parses config and defines metrics. Called once at Envoy config load.
-func NewFactory(h shared.HttpFilterConfigHandle, _ []byte) (*Factory, error) {
+func NewFactory(h shared.HttpFilterConfigHandle, _ []byte) (shared.HttpFilterFactory, error) {
 	f := &Factory{}
 	f.pool.New = func() any { return &Filter{factory: f} }
 	if h != nil {

@@ -54,8 +54,41 @@ verify:
 	@file dist/lib$(EXAMPLE).linux-arm64.so | grep -q 'ELF 64-bit' \
 		&& echo "arm64: OK" || echo "arm64: FAIL"
 
-# Run tests (no CGO needed -- uses fake SDK)
-.PHONY: test
+ENVOY     ?= $(HOME)/.func-e/versions/1.38.0/bin/envoy
+ENVOY_YAML ?= $(CURDIR)/e2e/envoy.yaml
+
+.PHONY: run
+run: build
+	GODEBUG=cgocheck=0 \
+	ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(CURDIR)/dist \
+	$(ENVOY) -c $(ENVOY_YAML) --log-level warning
+
+.PHONY: flamegraph
+flamegraph: build
+	@echo "Starting Envoy in background..."
+	@GODEBUG=cgocheck=0 \
+	 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(CURDIR)/dist \
+	 $(ENVOY) -c $(ENVOY_YAML) --log-level warning &
+	@echo "Waiting for Envoy to be ready..."
+	@until curl -sf http://127.0.0.1:9901/ready > /dev/null 2>&1; do sleep 0.5; done
+	@curl -sf -H "x-api-key: warmup" http://localhost:10000/ > /dev/null
+	@sleep 1
+	@echo "Warming up (50k requests)..."
+	@hey -n 50000 -c 100 -H "x-api-key: warmup" http://localhost:10000/ > /dev/null
+	@echo "Capturing allocs profile under load..."
+	@hey -n 500000 -c 200 -H "x-api-key: bench" http://localhost:10000/ > /dev/null &
+	@sleep 2
+	@curl -sf http://127.0.0.1:6061/debug/pprof/allocs -o bench/profiles/allocs_$(EXAMPLE).out
+	@pkill -f "envoy.*$(notdir $(ENVOY_YAML))" 2>/dev/null || true
+	@echo ""
+	@echo "Profile saved: bench/profiles/allocs_$(EXAMPLE).out"
+	@echo "Top allocations:"
+	@go tool pprof -alloc_objects -top bench/profiles/allocs_$(EXAMPLE).out 2>/dev/null | head -15
+	@echo ""
+	@echo "Open flamegraph:"
+	@echo "  go tool pprof -alloc_objects -http=:8080 bench/profiles/allocs_$(EXAMPLE).out"
+
+
 test:
 	go test -race ./...
 
