@@ -5,15 +5,61 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # weekly Monday 06:00 UTC (abi-drift only)
+
+# SHAs pinned to latest tags as of 2025-05-17:
+#   actions/checkout@v4                   34e114876b0b11c390a56381ad16ebd13914f8d5
+#   actions/setup-go@v5                   40f1582b2485089dde7abd97c1529aa768e1baff
+#   actions/cache@v4                      0057852bfaa89a56745cba8c7296529d2fc39830
+#   actions/upload-artifact@v4            ea165f8d65b6e75b540449e92b4886f43607fa02
+#   golangci/golangci-lint-action@v9.2.0  1e7e51e771db61008b38414a730f564565cf7c20
+
+env:
+  ENVOY_VERSION: "1.38.0"
+  ZIG_VERSION: "0.16.0"
+  CGO_ENABLED: "1"
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # lint: gofmt + golangci-lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "gofmt diff in:"
+            echo "$out"
+            exit 1
+          fi
+
+      - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          version: v2.1.6
+
+  # ---------------------------------------------------------------------------
+  # test: vet + unit tests (no real Envoy needed)
+  # ---------------------------------------------------------------------------
   test:
     name: test
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
@@ -26,50 +72,167 @@ jobs:
       - name: go test
         run: go test -race ./...
 
+  # ---------------------------------------------------------------------------
+  # bench: alloc regression gate
+  # Fails the build if any benchmark regresses vs bench/BASELINE.txt.
+  # The baseline file is committed to the repo and updated manually via
+  # `make bench > bench/BASELINE.txt` after an intentional improvement.
+  # ---------------------------------------------------------------------------
   bench:
-    name: bench (alloc baseline)
+    name: bench (alloc regression)
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
-      - name: benchmark
-        run: go test -bench=. -benchmem -count=3 ./bench/ | tee bench/results.txt
+      - name: run benchmarks
+        run: go test -bench=. -benchmem -count=5 ./bench/ | tee bench/current.txt
 
-      - name: upload bench results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: alloc regression gate
+        run: |
+          # Parse allocs/op from benchmark output and enforce hard ceilings.
+          # ns/op is not gated -- CI runners vary too much.
+          # Ceiling = 0 for hot paths, 2 for paths that must allocate (e.g. error response).
+          python3 - <<'EOF'
+          import sys, re
+
+          CEILINGS = {
+              "BenchmarkHeaderAuthAccept": 0,
+              "BenchmarkGetOne":           0,
+              "BenchmarkGetMiss":          0,
+              "BenchmarkGetChunks":        0,
+              "BenchmarkHeaderAuthReject": 2,
+              "BenchmarkGet":              2,
+              "BenchmarkGetAll":           2,
+              "BenchmarkFilterCreate":     2,
+          }
+
+          failures = []
+          with open("bench/current.txt") as f:
+              for line in f:
+                  m = re.match(r"(Benchmark\w+)-\d+\s+\d+\s+[\d.]+\s+\S+\s+[\d.]+\s+B/op\s+(\d+)\s+allocs/op", line)
+                  if not m:
+                      continue
+                  name, allocs = m.group(1), int(m.group(2))
+                  if name in CEILINGS and allocs > CEILINGS[name]:
+                      failures.append(f"REGRESSION: {name} got {allocs} allocs/op, ceiling is {CEILINGS[name]}")
+
+          if failures:
+              for f in failures:
+                  print(f)
+              sys.exit(1)
+          else:
+              print("alloc check passed")
+          EOF
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: bench-results
-          path: bench/results.txt
+          path: bench/current.txt
 
+  # ---------------------------------------------------------------------------
+  # build-linux: cross-compile all examples to linux/amd64 .so
+  # ---------------------------------------------------------------------------
   build-linux:
     name: cross-compile linux
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
       - name: cache zig
         id: cache-zig
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: /tmp/zig
-          key: zig-0.16.0-x86_64-linux
+          key: zig-${{ env.ZIG_VERSION }}-x86_64-linux
 
       - name: download zig
         if: steps.cache-zig.outputs.cache-hit != 'true'
         run: |
-          URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+          URL="https://ziglang.org/download/${{ env.ZIG_VERSION }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}.tar.xz"
           curl -fsSL "$URL" | tar -xJ -C /tmp
-          mv /tmp/zig-x86_64-linux-0.16.0 /tmp/zig
+          mv /tmp/zig-x86_64-linux-${{ env.ZIG_VERSION }} /tmp/zig
 
-      - name: build linux amd64
+      - name: build all examples (linux/amd64)
+        run: |
+          mkdir -p dist
+          for example in hello header-auth observability; do
+            echo "==> building $example"
+            TARGET=x86_64-linux-gnu.2.28 \
+            ZIG=/tmp/zig/zig \
+            CC=$(pwd)/scripts/zigcc.sh \
+            CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -buildmode=c-shared \
+              -o dist/lib${example}.linux-amd64.so ./examples/${example}/cmd
+          done
+
+      - name: verify ELF
+        run: |
+          for f in dist/*.linux-amd64.so; do
+            file "$f" | grep -q 'ELF 64-bit' && echo "OK: $f" || { echo "FAIL: $f"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: examples-linux-amd64
+          path: dist/*.linux-amd64.so
+
+  # ---------------------------------------------------------------------------
+  # e2e: real Envoy + compiled .so, header-auth acceptance tests
+  # Runs on push/PR only -- too slow and stateful for schedule.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: e2e (header-auth)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    needs: [build-linux]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: cache zig
+        id: cache-zig
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: /tmp/zig
+          key: zig-${{ env.ZIG_VERSION }}-x86_64-linux
+
+      - name: download zig
+        if: steps.cache-zig.outputs.cache-hit != 'true'
+        run: |
+          URL="https://ziglang.org/download/${{ env.ZIG_VERSION }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}.tar.xz"
+          curl -fsSL "$URL" | tar -xJ -C /tmp
+          mv /tmp/zig-x86_64-linux-${{ env.ZIG_VERSION }} /tmp/zig
+
+      - name: cache envoy
+        id: cache-envoy
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: /tmp/envoy
+          key: envoy-${{ env.ENVOY_VERSION }}-linux-amd64
+
+      - name: download envoy
+        if: steps.cache-envoy.outputs.cache-hit != 'true'
+        run: |
+          URL="https://archive.tetratelabs.io/envoy/download/v${{ env.ENVOY_VERSION }}/envoy-v${{ env.ENVOY_VERSION }}-linux-amd64.tar.xz"
+          mkdir -p /tmp/envoy
+          curl -fsSL "$URL" | tar -xJ --strip-components=2 -C /tmp/envoy
+          chmod +x /tmp/envoy/envoy
+
+      - name: build header-auth .so
         run: |
           mkdir -p dist
           TARGET=x86_64-linux-gnu.2.28 \
@@ -77,30 +240,32 @@ jobs:
           CC=$(pwd)/scripts/zigcc.sh \
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
           go build -trimpath -buildmode=c-shared \
-            -o dist/libheader-auth.linux-amd64.so ./examples/header-auth/cmd
+            -o dist/libheader-auth.so ./examples/header-auth/cmd
 
-      - name: verify ELF
-        run: file dist/libheader-auth.linux-amd64.so | grep -q 'ELF 64-bit' && echo "OK"
+      - name: run e2e tests
+        env:
+          ENVOY_BIN: /tmp/envoy/envoy
+          LUWES_SO: ${{ github.workspace }}/dist/libheader-auth.so
+        run: |
+          cd e2e
+          go test -tags=e2e -v -timeout=60s -run TestHeaderAuth ./...
 
-      - name: upload .so
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: header-auth-linux-amd64
-          path: dist/libheader-auth.linux-amd64.so
-
+  # ---------------------------------------------------------------------------
+  # abi-drift: weekly check that vendored abi.h matches envoy/main
+  # ---------------------------------------------------------------------------
   abi-drift:
     name: check abi drift (weekly)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: check drift
         run: |
           LATEST=$(curl -fsSL https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h)
           if ! diff -q <(echo "$LATEST") abi/abi.h > /dev/null 2>&1; then
             echo "::warning::abi.h has drifted from envoy/main -- run: make sync-abi"
-            diff <(echo "$LATEST") abi/abi.h | head -60 || true
+            diff <(echo "$LATEST") abi/abi.h | head -80 || true
           else
             echo "abi.h is in sync with envoy/main"
           fi
