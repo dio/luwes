@@ -1,13 +1,26 @@
-ZIG_VERSION := 0.16.0
-ZIG_BIN     := $(CURDIR)/.bin/zig
+ZIG_VERSION   := 0.16.0
+ZIG_BIN       := $(CURDIR)/.bin/zig
 
-_OS   := $(shell uname -s | tr '[:upper:]' '[:lower:]')
-_ARCH := $(shell uname -m | sed 's/arm64/aarch64/')
-ZIG_OS  := $(if $(filter darwin,$(_OS)),macos,$(_OS))
-ZIG_URL := https://ziglang.org/download/$(ZIG_VERSION)/zig-$(_ARCH)-$(ZIG_OS)-$(ZIG_VERSION).tar.xz
+ENVOY_VERSION := 1.38.0
+ENVOY_BIN     := $(CURDIR)/.bin/envoy
 
 EXAMPLE     ?= header-auth
 EXAMPLE_CMD := ./examples/$(EXAMPLE)/cmd
+ENVOY_YAML  ?= $(CURDIR)/examples/$(EXAMPLE)/envoy.yaml
+
+# Detect host OS and architecture
+_OS   := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+_ARCH := $(shell uname -m | sed 's/arm64/aarch64/')
+
+# Zig download URL
+ZIG_OS  := $(if $(filter darwin,$(_OS)),macos,$(_OS))
+ZIG_URL := https://ziglang.org/download/$(ZIG_VERSION)/zig-$(_ARCH)-$(ZIG_OS)-$(ZIG_VERSION).tar.xz
+
+# Envoy download URL (archive.tetratelabs.io)
+# Supports: darwin-arm64, darwin-amd64, linux-amd64, linux-arm64
+ENVOY_ARCHIVE_OS   := $(if $(filter darwin,$(_OS)),darwin,linux)
+ENVOY_ARCHIVE_ARCH := $(shell uname -m | sed 's/aarch64/arm64/')
+ENVOY_URL := https://archive.tetratelabs.io/envoy/download/v$(ENVOY_VERSION)/envoy-v$(ENVOY_VERSION)-$(ENVOY_ARCHIVE_OS)-$(ENVOY_ARCHIVE_ARCH).tar.xz
 
 .PHONY: all
 all: build
@@ -19,15 +32,25 @@ $(ZIG_BIN):
 	@curl -fsSL "$(ZIG_URL)" | tar -xJ --strip-components=1 -C .bin
 	@echo "Zig ready: $@"
 
+# Download envoy on demand
+$(ENVOY_BIN):
+	@mkdir -p .bin
+	@echo "Downloading Envoy $(ENVOY_VERSION) for $(ENVOY_ARCHIVE_OS)-$(ENVOY_ARCHIVE_ARCH)..."
+	@curl -fsSL "$(ENVOY_URL)" | tar -xJ --strip-components=2 -C .bin
+	@chmod +x .bin/envoy
+	@echo "Envoy ready: $@"
+
 # Build for host (dev/test)
 .PHONY: build
 build:
+	@mkdir -p dist
 	CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
 		-o dist/lib$(EXAMPLE).so $(EXAMPLE_CMD)
 
 # Cross-compile for Linux amd64
 .PHONY: build-linux-amd64
 build-linux-amd64: $(ZIG_BIN)
+	@mkdir -p dist
 	TARGET=x86_64-linux-gnu.2.28 \
 	CC=$(CURDIR)/scripts/zigcc.sh \
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
@@ -37,6 +60,7 @@ build-linux-amd64: $(ZIG_BIN)
 # Cross-compile for Linux arm64
 .PHONY: build-linux-arm64
 build-linux-arm64: $(ZIG_BIN)
+	@mkdir -p dist
 	TARGET=aarch64-linux-gnu.2.28 \
 	CC=$(CURDIR)/scripts/zigcc.sh \
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
@@ -54,24 +78,24 @@ verify:
 	@file dist/lib$(EXAMPLE).linux-arm64.so | grep -q 'ELF 64-bit' \
 		&& echo "arm64: OK" || echo "arm64: FAIL"
 
-ENVOY     ?= $(HOME)/.func-e/versions/1.38.0/bin/envoy
-ENVOY_YAML ?= $(CURDIR)/e2e/envoy.yaml
-
+# Start Envoy with the filter (foreground)
 .PHONY: run
-run: build
+run: build $(ENVOY_BIN)
 	GODEBUG=cgocheck=0 \
 	ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(CURDIR)/dist \
-	$(ENVOY) -c $(ENVOY_YAML) --log-level warning
+	$(ENVOY_BIN) -c $(ENVOY_YAML) --log-level warning
 
+# Capture a pprof allocs flamegraph under load (requires hey)
 .PHONY: flamegraph
-flamegraph: build
+flamegraph: build $(ENVOY_BIN)
+	@mkdir -p bench/profiles
 	@echo "Starting Envoy in background..."
 	@GODEBUG=cgocheck=0 \
 	 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(CURDIR)/dist \
-	 $(ENVOY) -c $(ENVOY_YAML) --log-level warning &
+	 $(ENVOY_BIN) -c $(ENVOY_YAML) --log-level warning &
 	@echo "Waiting for Envoy to be ready..."
 	@until curl -sf http://127.0.0.1:9901/ready > /dev/null 2>&1; do sleep 0.5; done
-	@curl -sf -H "x-api-key: warmup" http://localhost:10000/ > /dev/null
+	@curl -sf -H "x-api-key: warmup" http://localhost:10000/ > /dev/null || true
 	@sleep 1
 	@echo "Warming up (50k requests)..."
 	@hey -n 50000 -c 100 -H "x-api-key: warmup" http://localhost:10000/ > /dev/null
@@ -88,16 +112,15 @@ flamegraph: build
 	@echo "Open flamegraph:"
 	@echo "  go tool pprof -alloc_objects -http=:8080 bench/profiles/allocs_$(EXAMPLE).out"
 
-
+# Run unit tests and benchmarks (no Envoy needed)
+.PHONY: test
 test:
 	go test -race ./...
 
-# Run benchmarks and capture allocs
 .PHONY: bench
 bench:
 	go test -bench=. -benchmem -count=5 ./bench/ | tee bench/results.txt
 
-# Run benchmarks and emit heap profile
 .PHONY: bench-profile
 bench-profile:
 	go test -bench=. -benchmem -memprofile=bench/mem.out ./bench/
