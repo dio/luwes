@@ -190,7 +190,7 @@ Comparison:
 
 ## Example: header-auth-sahl
 
-`examples/header-auth-sahl` reimplements `examples/header-auth` using sahl.
+`examples/sahl/header-auth` reimplements `examples/header-auth` using sahl.
 Compare them:
 
 **Raw luwes (header-auth):**

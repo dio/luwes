@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dio/luwes/examples/sse-tap/buffer"
-	ssetap "github.com/dio/luwes/examples/sse-tap"
+	"github.com/dio/luwes/examples/sahl/sse-tap/buffer"
+	ssetap "github.com/dio/luwes/examples/sahl/sse-tap"
 	"github.com/stretchr/testify/assert"
 )
 

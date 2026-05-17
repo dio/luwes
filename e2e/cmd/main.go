@@ -8,7 +8,7 @@ import (
 	"github.com/dio/luwes/sahl"
 
 	headerauth "github.com/dio/luwes/examples/header-auth"
-	headerauthsahl "github.com/dio/luwes/examples/header-auth-sahl"
+	headerauthsahl "github.com/dio/luwes/examples/sahl/header-auth"
 )
 
 func init() {
