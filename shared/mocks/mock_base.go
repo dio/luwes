@@ -5,7 +5,6 @@
 //
 //	mockgen -source=base.go -destination=mocks/mock_base.go -package=mocks
 //
-
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -20,7 +19,6 @@ import (
 type MockBodyBuffer struct {
 	ctrl     *gomock.Controller
 	recorder *MockBodyBufferMockRecorder
-	isgomock struct{}
 }
 
 // MockBodyBufferMockRecorder is the mock recorder for MockBodyBuffer.
@@ -96,7 +94,6 @@ func (mr *MockBodyBufferMockRecorder) GetSize() *gomock.Call {
 type MockHeaderMap struct {
 	ctrl     *gomock.Controller
 	recorder *MockHeaderMapMockRecorder
-	isgomock struct{}
 }
 
 // MockHeaderMapMockRecorder is the mock recorder for MockHeaderMap.
@@ -170,6 +167,20 @@ func (mr *MockHeaderMapMockRecorder) GetOne(key any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOne", reflect.TypeOf((*MockHeaderMap)(nil).GetOne), key)
 }
 
+// GetOneInto mocks base method.
+func (m *MockHeaderMap) GetOneInto(key string, out *shared.UnsafeEnvoyBuffer) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOneInto", key, out)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// GetOneInto indicates an expected call of GetOneInto.
+func (mr *MockHeaderMapMockRecorder) GetOneInto(key, out any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOneInto", reflect.TypeOf((*MockHeaderMap)(nil).GetOneInto), key, out)
+}
+
 // Remove mocks base method.
 func (m *MockHeaderMap) Remove(key string) {
 	m.ctrl.T.Helper()
@@ -198,7 +209,6 @@ func (mr *MockHeaderMapMockRecorder) Set(key, value any) *gomock.Call {
 type MockHttpCalloutCallback struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpCalloutCallbackMockRecorder
-	isgomock struct{}
 }
 
 // MockHttpCalloutCallbackMockRecorder is the mock recorder for MockHttpCalloutCallback.
@@ -234,7 +244,6 @@ func (mr *MockHttpCalloutCallbackMockRecorder) OnHttpCalloutDone(calloutID, resu
 type MockHttpStreamCallback struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpStreamCallbackMockRecorder
-	isgomock struct{}
 }
 
 // MockHttpStreamCallbackMockRecorder is the mock recorder for MockHttpStreamCallback.
@@ -318,7 +327,6 @@ func (mr *MockHttpStreamCallbackMockRecorder) OnHttpStreamTrailers(streamID, tra
 type MockScheduler struct {
 	ctrl     *gomock.Controller
 	recorder *MockSchedulerMockRecorder
-	isgomock struct{}
 }
 
 // MockSchedulerMockRecorder is the mock recorder for MockScheduler.
@@ -354,7 +362,6 @@ func (mr *MockSchedulerMockRecorder) Schedule(arg0 any) *gomock.Call {
 type MockDownstreamWatermarkCallbacks struct {
 	ctrl     *gomock.Controller
 	recorder *MockDownstreamWatermarkCallbacksMockRecorder
-	isgomock struct{}
 }
 
 // MockDownstreamWatermarkCallbacksMockRecorder is the mock recorder for MockDownstreamWatermarkCallbacks.
@@ -402,7 +409,6 @@ func (mr *MockDownstreamWatermarkCallbacksMockRecorder) OnBelowWriteBufferLowWat
 type MockSpan struct {
 	ctrl     *gomock.Controller
 	recorder *MockSpanMockRecorder
-	isgomock struct{}
 }
 
 // MockSpanMockRecorder is the mock recorder for MockSpan.
@@ -545,7 +551,6 @@ func (mr *MockSpanMockRecorder) SpawnChild(operation any) *gomock.Call {
 type MockChildSpan struct {
 	ctrl     *gomock.Controller
 	recorder *MockChildSpanMockRecorder
-	isgomock struct{}
 }
 
 // MockChildSpanMockRecorder is the mock recorder for MockChildSpan.
@@ -700,7 +705,6 @@ func (mr *MockChildSpanMockRecorder) SpawnChild(operation any) *gomock.Call {
 type MockHttpFilterHandle struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpFilterHandleMockRecorder
-	isgomock struct{}
 }
 
 // MockHttpFilterHandleMockRecorder is the mock recorder for MockHttpFilterHandle.
@@ -1291,6 +1295,20 @@ func (mr *MockHttpFilterHandleMockRecorder) Log(level, format any, args ...any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Log", reflect.TypeOf((*MockHttpFilterHandle)(nil).Log), varargs...)
 }
 
+// LogEnabled mocks base method.
+func (m *MockHttpFilterHandle) LogEnabled(level shared.LogLevel) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LogEnabled", level)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// LogEnabled indicates an expected call of LogEnabled.
+func (mr *MockHttpFilterHandleMockRecorder) LogEnabled(level any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogEnabled", reflect.TypeOf((*MockHttpFilterHandle)(nil).LogEnabled), level)
+}
+
 // ReceivedBufferedRequestBody mocks base method.
 func (m *MockHttpFilterHandle) ReceivedBufferedRequestBody() bool {
 	m.ctrl.T.Helper()
@@ -1714,7 +1732,6 @@ func (mr *MockHttpFilterHandleMockRecorder) StartHttpStream(cluster, headers, bo
 type MockHttpFilterConfigHandle struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpFilterConfigHandleMockRecorder
-	isgomock struct{}
 }
 
 // MockHttpFilterConfigHandleMockRecorder is the mock recorder for MockHttpFilterConfigHandle.

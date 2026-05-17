@@ -96,6 +96,27 @@ func BenchmarkGetOne(b *testing.B) {
 	}
 }
 
+// BenchmarkGetOneInto benchmarks HeaderMap.GetOneInto -- the v2 zero-allocation
+// path where the caller provides the destination buffer. On the real CGO path
+// this eliminates the &valueView heap escape that GetOne incurs. On the fake
+// (pure Go) both are zero-alloc, but the benchmark documents the intended usage
+// and keeps the alloc ceiling enforced in CI.
+func BenchmarkGetOneInto(b *testing.B) {
+	fh := fake.NewFakeHeaderMap(map[string]string{
+		"authorization": "Bearer token",
+		":path":         "/v1/chat/completions",
+		"content-type":  "application/json",
+	})
+
+	var buf shared.UnsafeEnvoyBuffer
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		_ = fh.GetOneInto("authorization", &buf)
+	}
+}
+
 // BenchmarkGet benchmarks HeaderMap.Get -- allocates even on a hit.
 // Baseline to compare against GetOne.
 func BenchmarkGet(b *testing.B) {

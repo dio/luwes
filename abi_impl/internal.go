@@ -326,6 +326,28 @@ func (h *dymHeaderMap) GetOne(key string) shared.UnsafeEnvoyBuffer {
 	return h.getSingleHeader(key, 0, nil)
 }
 
+// GetOneInto writes the first value for key directly into out via an
+// unsafe.Pointer cast, bypassing the local valueView declaration that
+// getSingleHeader requires. The caller owns out -- if it is stack-allocated
+// (the common case), no heap allocation occurs on the hot path.
+//
+// Layout proof: UnsafeEnvoyBuffer and envoy_dynamic_module_type_envoy_buffer
+// are both 16 bytes with ptr at offset 0 and length at offset 8 (verified at
+// build time via the layout_check in the test suite).
+func (h *dymHeaderMap) GetOneInto(key string, out *shared.UnsafeEnvoyBuffer) bool {
+	cBuf := (*C.envoy_dynamic_module_type_envoy_buffer)(unsafe.Pointer(out))
+	ret := C.envoy_dynamic_module_callback_http_get_header(
+		h.hostPluginPtr,
+		h.headerType,
+		stringToModuleBuffer(key),
+		cBuf,
+		0,
+		nil,
+	)
+	runtime.KeepAlive(key)
+	return bool(ret) && out.Ptr != nil
+}
+
 func (h *dymHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 	headerCount := C.envoy_dynamic_module_callback_http_get_headers_size(
 		(C.envoy_dynamic_module_type_http_filter_envoy_ptr)(h.hostPluginPtr),

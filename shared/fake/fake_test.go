@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dio/luwes/shared"
 	"github.com/dio/luwes/shared/fake"
 )
 
@@ -83,7 +84,26 @@ func TestFakeHeaderMap_Remove(t *testing.T) {
 	assert.Equal(t, "x-del", h.Removes[0])
 }
 
-// -- FakeBodyBuffer --
+func TestFakeHeaderMap_GetOneInto_Hit(t *testing.T) {
+	h := fake.NewFakeHeaderMap(map[string]string{"x-api-key": "secret"})
+	var buf shared.UnsafeEnvoyBuffer
+	require.True(t, h.GetOneInto("x-api-key", &buf))
+	assert.Equal(t, "secret", buf.ToUnsafeString())
+}
+
+func TestFakeHeaderMap_GetOneInto_Miss(t *testing.T) {
+	h := fake.NewFakeHeaderMap(map[string]string{})
+	var buf shared.UnsafeEnvoyBuffer
+	assert.False(t, h.GetOneInto("x-missing", &buf))
+	assert.Nil(t, buf.Ptr)
+}
+
+func TestFakeHeaderMap_GetOneInto_CaseInsensitive(t *testing.T) {
+	h := fake.NewFakeHeaderMap(map[string]string{"Content-Type": "application/json"})
+	var buf shared.UnsafeEnvoyBuffer
+	require.True(t, h.GetOneInto("content-type", &buf))
+	assert.Equal(t, "application/json", buf.ToUnsafeString())
+}
 
 func TestFakeBodyBuffer_GetChunks_Empty(t *testing.T) {
 	b := fake.NewFakeBodyBuffer(nil)

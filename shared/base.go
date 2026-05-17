@@ -87,6 +87,23 @@ type HeaderMap interface {
 	// copy the data if you need to keep it and use it later.
 	GetOne(key string) UnsafeEnvoyBuffer
 
+	// GetOneInto is the zero-allocation variant of GetOne.
+	// It writes the result directly into the caller-provided buffer rather than
+	// returning a new value, eliminating the CGO boundary heap escape that
+	// GetOne incurs. Returns true if the key was found.
+	//
+	// The UnsafeEnvoyBuffer struct layout is identical to the C
+	// envoy_dynamic_module_type_envoy_buffer struct (ptr at 0, len at 8),
+	// so the pointer can be cast across the CGO boundary without a copy.
+	//
+	// Usage:
+	//
+	//	var buf shared.UnsafeEnvoyBuffer
+	//	if headers.GetOneInto("x-api-key", &buf) {
+	//	    // use buf.ToUnsafeString() within this callback
+	//	}
+	GetOneInto(key string, out *UnsafeEnvoyBuffer) bool
+
 	// GetAll retrieves all header values. You should not mutate the returned slice
 	// directly.
 	// NOTE: The memory of underlying data may not be managed by Go GC. So you should

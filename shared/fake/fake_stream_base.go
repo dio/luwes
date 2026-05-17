@@ -57,6 +57,17 @@ func (h *FakeHeaderMap) GetOne(key string) shared.UnsafeEnvoyBuffer {
 	return shared.UnsafeEnvoyBuffer{Ptr: unsafe.StringData(v), Len: uint64(len(v))}
 }
 
+func (h *FakeHeaderMap) GetOneInto(key string, out *shared.UnsafeEnvoyBuffer) bool {
+	values := h.headers[strings.ToLower(key)]
+	if len(values) == 0 {
+		return false
+	}
+	v := values[0]
+	out.Ptr = unsafe.StringData(v)
+	out.Len = uint64(len(v))
+	return true
+}
+
 func (h *FakeHeaderMap) GetAll() [][2]shared.UnsafeEnvoyBuffer {
 	result := make([][2]shared.UnsafeEnvoyBuffer, 0, len(h.headers))
 	for k, vs := range h.headers {

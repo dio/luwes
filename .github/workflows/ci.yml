@@ -136,6 +136,7 @@ jobs:
           CEILINGS = {
               "BenchmarkHeaderAuthAccept": 0,
               "BenchmarkGetOne":           0,
+              "BenchmarkGetOneInto":       0,
               "BenchmarkGetMiss":          0,
               "BenchmarkGetChunks":        0,
               "BenchmarkHeaderAuthReject": 2,
