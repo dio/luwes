@@ -5,15 +5,15 @@ rejects with 401 if absent, injects `x-user-id` with the key value for accepted
 requests.
 
 Demonstrates:
-- `GetOne` for zero-alloc header reads
+- `GetOneInto` for zero-allocation header reads (caller-owned buffer, no CGO escape)
 - `SendLocalResponse` for early rejection
 - `sync.Pool` for filter instance reuse (the pooling pattern for hot-path filters)
 - pprof admin server wired via `sdk.StartPprof`
 
 ## What it does
 
-- Reads `x-api-key` from request headers using `GetOne` (zero alloc)
-- Returns 401 with `{"error":"missing x-api-key"}` if the header is absent
+- Reads `x-api-key` from request headers using `GetOneInto` (zero alloc, even on the real CGO path)
+- Returns 401 with `{"error":"missing x-api-key"}` if the header is absent or empty
 - Injects `x-user-id: <key>` into the request for accepted traffic
 - Starts a Go pprof server on `127.0.0.1:6061` (or `LUWES_PPROF_ADDR`)
 
@@ -149,9 +149,10 @@ examples/header-auth/
 instances. `Create` gets from the pool; `OnStreamComplete` returns to the pool.
 This eliminates the per-request `*Filter` heap allocation on the hot path.
 
-**GetOne, not Get.** `GetOne` returns a value type (`UnsafeEnvoyBuffer`) with zero
-allocation. `Get` returns a `[]UnsafeEnvoyBuffer` slice (always allocates). For
-single-value headers use `GetOne`.
+**GetOneInto, not GetOne.** `GetOneInto` is the zero-allocation variant of `GetOne`.
+Unlike `GetOne`, it avoids the CGO boundary heap escape by writing the result into
+a caller-provided buffer that the compiler can stack-allocate. `GetOne` still
+allocates 1 on the real Envoy path; `GetOneInto` allocates 0.
 
 **ToUnsafeString for immediate use.** `key.ToUnsafeString()` returns a string
 backed by Envoy memory. Valid only during the current callback. Used here for the
@@ -165,11 +166,11 @@ From `make flamegraph EXAMPLE=header-auth`, 500k requests under concurrency 200:
 Type: alloc_objects
 
       flat  flat%   sum%
-  491527  98.90%    getSingleHeader  (CGO boundary: valueView escapes)
-    4682   0.94%    newDymStreamPluginHandle (pool misses, GC cleared sync.Pool)
+  360453  99.14%    OnRequestHeaders  (RequestHeaders().Set allocates a header string)
+    2341   0.64%    init.func1 (pool misses, GC cleared sync.Pool)
 ```
 
-The filter pool is working: only 4682 handle allocs over 500k requests (pool
-misses from GC cycles) vs 500k without the pool. The dominant cost is the CGO
-boundary allocation in `getSingleHeader`, structural, present in both upstream
-SDK and luwes, not reducible at the Go layer.
+The filter pool and `GetOneInto` are both working: `getSingleHeader` is gone
+from the flamegraph entirely. The remaining cost is `RequestHeaders().Set()`
+which allocates a string to write the `x-user-id` header back into Envoy.
+That is unavoidable without a mutation API that writes directly into Envoy memory.

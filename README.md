@@ -47,6 +47,49 @@ func main() {}
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared -o dist/libmyfilter.so ./cmd
 ```
 
+## API reference
+
+### Header reads
+
+| Method | Allocs (real CGO) | When to use |
+|--------|-------------------|-------------|
+| `GetOne(key) UnsafeEnvoyBuffer` | 1 | Simple reads where you immediately copy (`.ToString()`) |
+| `GetOneInto(key, *UnsafeEnvoyBuffer) bool` | 0 | Hot path: header read + use within same callback |
+| `Get(key) []UnsafeEnvoyBuffer` | 1+ | Multi-value headers |
+| `GetAll() [][2]UnsafeEnvoyBuffer` | 1 | Iterate all headers |
+
+**Why `GetOneInto` and not just `GetOne`?** The name follows Go's convention for
+"write into caller-provided buffer" (see `io.ReadFull`, `binary.Read`). The reason
+it's a separate method rather than a fixed `GetOne` is that the zero-alloc property
+requires the caller to declare the buffer at the call site. That is a visible API
+contract, not an implementation detail that can be hidden inside `GetOne`.
+
+### Body reads
+
+```go
+// Read the complete request body (copies into Go memory).
+// Call from OnRequestTrailers or when endOfStream is true in OnRequestBody.
+body := utility.ReadWholeRequestBody(handle)
+
+// Read body as chunks (zero-copy, Envoy-owned memory).
+// Each UnsafeEnvoyBuffer is valid only within the current callback.
+for _, chunk := range handle.ReceivedRequestBody().GetChunks() {
+    _ = chunk.ToUnsafeBytes()
+}
+```
+
+### Tracing, metrics, logging
+
+See [examples/observability](examples/observability/) for a complete example covering:
+`GetActiveSpan`, `SpawnChild`, `SetTag`, `DefineCounter`, `DefineHistogram`,
+`IncrementCounterValue`, `RecordHistogramValue`, `LogEnabled`, `SetMetadata`.
+
+### UnsafeEnvoyBuffer lifetime
+
+Every `UnsafeEnvoyBuffer` points into Envoy-owned memory. It is valid only within
+the callback in which it was obtained. Do not store it past the callback boundary.
+Use `.ToString()` or `.ToBytes()` to copy into Go memory when you need to retain it.
+
 ## Examples
 
 | Example | What it shows |

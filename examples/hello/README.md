@@ -104,9 +104,25 @@ the per-filter boilerplate.
 
 ## Key patterns
 
+**GetOne vs GetOneInto.** This example uses `GetOne` because it immediately copies
+the result with `.ToString()`, making the allocation irrelevant. For hot-path filters
+that read a header and use it within the same callback without copying, prefer
+`GetOneInto`: it eliminates the CGO boundary heap escape that `GetOne` incurs.
+
+```go
+// GetOne: simple, allocates 1 on the real CGO path (valueView escapes to heap)
+f.path = headers.GetOne(":path").ToString()
+
+// GetOneInto: zero alloc on CGO path, caller declares the buffer
+var buf shared.UnsafeEnvoyBuffer
+if headers.GetOneInto(":path", &buf) {
+    f.path = buf.ToString()  // copy into Go memory before returning
+}
+```
+
 **Copy before returning from OnRequestHeaders.** The `UnsafeEnvoyBuffer` returned
-by `GetOne` points into Envoy-managed memory. That memory is valid only during the
-callback. Calling `ToString()` copies it into Go memory before the callback returns.
+by `GetOne` or written by `GetOneInto` points into Envoy-managed memory. That memory
+is valid only during the callback. Calling `ToString()` copies it into Go memory.
 Calling `ToUnsafeString()` and storing the result would be a use-after-free:
 
 ```go
