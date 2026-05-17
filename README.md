@@ -6,9 +6,7 @@
 > **On the coverage number:** the badge excludes `abi_impl` (the CGO layer
 > that calls into Envoy's C ABI) and `shared/mocks` (generated code). Both
 > are covered by the e2e suite against a real Envoy 1.38.0 binary in CI.
-> The root package reads 26% because its entry points (`Register`, `RegisterRaw`,
-> `RegisterHttpFilterConfigFactories`) are exercised by the e2e cmd packages,
-> not unit tests. Every other unit-testable package is above 85%.
+> Every other unit-testable package is above 85%.
 
 Zero-allocation Go SDK for Envoy dynamic modules. Drop-in replacement for
 `github.com/envoyproxy/envoy/source/extensions/dynamic_modules/sdk/go`.
