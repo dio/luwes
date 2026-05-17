@@ -9,7 +9,10 @@ package sahl
 // they access unexported types and are only compiled into the sahl test binary.
 
 import (
+	"testing"
+
 	"github.com/dio/luwes/shared"
+	"github.com/dio/luwes/shared/fake"
 )
 
 // NewRequestForTest constructs a Request for use in tests, bypassing the pool.
@@ -47,8 +50,63 @@ func NewBodyAwareFilterForTest(name string, handler HandlerFunc, handle shared.H
 // Responded reports whether Send or SendBytes was called.
 func (w *Writer) Responded() bool { return w.responded }
 
-// ParseStatusForTest exposes parseStatus for unit tests.
-func ParseStatusForTest(s string) int { return parseStatus(s) }
+// TestNewWriterForTesting_Functional verifies NewWriterForTesting from sahl/testing.go
+// returns a Writer that can queue and flush mutations. Lives here (package sahl) so
+// the function is counted in the sahl coverage run; its external consumer is
+// sahl/examples/decoder which exercises it from a different package.
+func TestNewWriterForTesting_Functional(t *testing.T) {
+	t.Helper() // suppress output on success
+	fh := fake.NewFilterHandle(fake.WithHeaders(map[string]string{"x-test": ""}))
+	w := NewWriterForTesting(fh)
+	if w == nil {
+		t.Fatal("NewWriterForTesting returned nil")
+	}
+	w.SetRequestHeader("x-test", "from-writer")
+	w.flush(false)
+	if got := fh.RequestHeaders().(*fake.FakeHeaderMap).GetString("x-test"); got != "from-writer" {
+		t.Fatalf("want x-test=from-writer, got %q", got)
+	}
+}
+
+// TestConfigFactory_NilHandler_ReturnsError covers the def.handler == nil guard in
+// configFactory.Create. This fires when Factory(nil) is called : a misconfigured
+// filter that has no handler must fail loudly at config load time, not at request time.
+func TestConfigFactory_NilHandler_ReturnsError(t *testing.T) {
+	cf := newConfigFactory("bad-filter", &filterDef{handler: nil})
+	_, err := cf.Create(&fakeConfigHandleForExport{}, nil)
+	if err == nil {
+		t.Fatal("expected error for nil handler, got nil")
+	}
+	if err.Error() == "" {
+		t.Fatal("error message must not be empty")
+	}
+}
+
+type fakeConfigHandleForExport struct{}
+
+func (h *fakeConfigHandleForExport) DefineCounter(_ string, _ ...string) (shared.MetricID, shared.MetricsResult) {
+	return 0, shared.MetricsSuccess
+}
+func (h *fakeConfigHandleForExport) DefineHistogram(_ string, _ ...string) (shared.MetricID, shared.MetricsResult) {
+	return 0, shared.MetricsSuccess
+}
+func (h *fakeConfigHandleForExport) DefineGauge(_ string, _ ...string) (shared.MetricID, shared.MetricsResult) {
+	return 0, shared.MetricsSuccess
+}
+func (h *fakeConfigHandleForExport) Log(_ shared.LogLevel, _ string, _ ...any) {}
+func (h *fakeConfigHandleForExport) GetScheduler() shared.Scheduler            { return nil }
+func (h *fakeConfigHandleForExport) HttpCallout(_ string, _ [][2]string, _ []byte, _ uint64, _ shared.HttpCalloutCallback) (shared.HttpCalloutInitResult, uint64) {
+	return shared.HttpCalloutInitClusterNotFound, 0
+}
+func (h *fakeConfigHandleForExport) StartHttpStream(_ string, _ [][2]string, _ []byte, _ bool, _ uint64, _ shared.HttpStreamCallback) (shared.HttpCalloutInitResult, uint64) {
+	return shared.HttpCalloutInitClusterNotFound, 0
+}
+func (h *fakeConfigHandleForExport) SendHttpStreamData(_ uint64, _ []byte, _ bool) bool { return false }
+func (h *fakeConfigHandleForExport) SendHttpStreamTrailers(_ uint64, _ [][2]string) bool {
+	return false
+}
+func (h *fakeConfigHandleForExport) ResetHttpStream(_ uint64) {}
+func ParseStatusForTest(s string) int                         { return parseStatus(s) }
 
 // FlushForTest applies queued mutations directly (without calling ContinueRequest).
 // For use in unit tests that check mutation state without a real Envoy scheduler.
