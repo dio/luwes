@@ -31,6 +31,16 @@ func WithRequestBody(body []byte) FilterHandleOption {
 	}
 }
 
+// WithReceivedRequestBody sets a separate received (latest chunk) request body.
+// Use together with WithRequestBody to simulate the unbuffered delivery path where
+// Envoy has buffered earlier chunks AND delivers a new chunk in the same callback.
+// When used, bufferedReq is left false so utility.ReadWholeRequestBody reads both.
+func WithReceivedRequestBody(body []byte) FilterHandleOption {
+	return func(h *FakeFilterHandle) {
+		h.receivedReqBody = NewFakeBodyBuffer(body)
+	}
+}
+
 // WithResponseBody sets the response body on the fake handle.
 func WithResponseBody(body []byte) FilterHandleOption {
 	return func(h *FakeFilterHandle) {
@@ -38,14 +48,24 @@ func WithResponseBody(body []byte) FilterHandleOption {
 	}
 }
 
+// WithReceivedResponseBody sets a separate received (latest chunk) response body.
+// Mirrors WithReceivedRequestBody for the response path.
+func WithReceivedResponseBody(body []byte) FilterHandleOption {
+	return func(h *FakeFilterHandle) {
+		h.receivedRespBody = NewFakeBodyBuffer(body)
+	}
+}
+
 // NewFilterHandle constructs a FakeFilterHandle with the given options.
 func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 	h := &FakeFilterHandle{
-		reqHeaders:  NewFakeHeaderMap(nil),
-		respHeaders: NewFakeHeaderMap(nil),
-		reqBody:     NewFakeBodyBuffer(nil),
-		respBody:    NewFakeBodyBuffer(nil),
-		metadata:    make(map[string]map[string]any),
+		reqHeaders:       NewFakeHeaderMap(nil),
+		respHeaders:      NewFakeHeaderMap(nil),
+		reqBody:          NewFakeBodyBuffer(nil),
+		respBody:         NewFakeBodyBuffer(nil),
+		receivedReqBody:  NewFakeBodyBuffer(nil),
+		receivedRespBody: NewFakeBodyBuffer(nil),
+		metadata:         make(map[string]map[string]any),
 	}
 	for _, o := range opts {
 		o(h)
@@ -60,13 +80,15 @@ func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 // Methods that would require a real Envoy scheduler are no-ops; tests that
 // need async behaviour should use the real e2e test suite.
 type FakeFilterHandle struct {
-	reqHeaders   *FakeHeaderMap
-	respHeaders  *FakeHeaderMap
-	reqBody      *FakeBodyBuffer
-	respBody     *FakeBodyBuffer
-	bufferedReq  bool
-	bufferedResp bool
-	metadata     map[string]map[string]any
+	reqHeaders       *FakeHeaderMap
+	respHeaders      *FakeHeaderMap
+	reqBody          *FakeBodyBuffer
+	respBody         *FakeBodyBuffer
+	receivedReqBody  *FakeBodyBuffer
+	receivedRespBody *FakeBodyBuffer
+	bufferedReq      bool
+	bufferedResp     bool
+	metadata         map[string]map[string]any
 
 	// Recorded side effects for assertions.
 	LocalResponses    []LocalResponse
@@ -104,8 +126,8 @@ func (h *FakeFilterHandle) ResponseTrailers() shared.HeaderMap {
 
 // -- Body accessors --
 
-func (h *FakeFilterHandle) BufferedRequestBody() shared.BodyBuffer { return h.reqBody }
-func (h *FakeFilterHandle) ReceivedRequestBody() shared.BodyBuffer { return h.reqBody }
+func (h *FakeFilterHandle) BufferedRequestBody() shared.BodyBuffer  { return h.reqBody }
+func (h *FakeFilterHandle) ReceivedRequestBody() shared.BodyBuffer  { return h.receivedReqBody }
 
 // SetRequestBody replaces the request body on the handle. For use in tests
 // that need to set the body after construction (e.g. body-aware filter tests
@@ -114,7 +136,7 @@ func (h *FakeFilterHandle) SetRequestBody(body []byte) {
 	h.reqBody = NewFakeBodyBuffer(body)
 }
 func (h *FakeFilterHandle) BufferedResponseBody() shared.BodyBuffer { return h.respBody }
-func (h *FakeFilterHandle) ReceivedResponseBody() shared.BodyBuffer { return h.respBody }
+func (h *FakeFilterHandle) ReceivedResponseBody() shared.BodyBuffer { return h.receivedRespBody }
 func (h *FakeFilterHandle) ReceivedBufferedRequestBody() bool       { return h.bufferedReq }
 func (h *FakeFilterHandle) ReceivedBufferedResponseBody() bool      { return h.bufferedResp }
 

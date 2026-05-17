@@ -42,6 +42,23 @@ func TestWithRequestBody(t *testing.T) {
 	assert.True(t, h.ReceivedBufferedRequestBody())
 }
 
+func TestWithReceivedRequestBody(t *testing.T) {
+	h := NewFilterHandle(WithReceivedRequestBody([]byte("received chunk")))
+	chunks := h.ReceivedRequestBody().GetChunks()
+	require.Len(t, chunks, 1)
+	assert.Equal(t, "received chunk", chunks[0].ToUnsafeString())
+	// bufferedReq must be false -- caller should combine buffered + received.
+	assert.False(t, h.ReceivedBufferedRequestBody())
+}
+
+func TestWithReceivedResponseBody(t *testing.T) {
+	h := NewFilterHandle(WithReceivedResponseBody([]byte("resp chunk")))
+	chunks := h.ReceivedResponseBody().GetChunks()
+	require.Len(t, chunks, 1)
+	assert.Equal(t, "resp chunk", chunks[0].ToUnsafeString())
+	assert.False(t, h.ReceivedBufferedResponseBody())
+}
+
 func TestWithResponseBody(t *testing.T) {
 	h := NewFilterHandle(WithResponseBody([]byte("world")))
 	chunks := h.BufferedResponseBody().GetChunks()
@@ -68,9 +85,12 @@ func TestHeaderAccessors(t *testing.T) {
 func TestBodyAccessors(t *testing.T) {
 	h := NewFilterHandle(WithRequestBody([]byte("req")), WithResponseBody([]byte("resp")))
 
-	// Buffered and Received point to the same backing store.
-	assert.Equal(t, h.BufferedRequestBody(), h.ReceivedRequestBody())
-	assert.Equal(t, h.BufferedResponseBody(), h.ReceivedResponseBody())
+	// Buffered and Received are now separate backing stores.
+	// WithRequestBody populates reqBody; receivedReqBody starts empty.
+	assert.NotNil(t, h.BufferedRequestBody())
+	assert.NotNil(t, h.ReceivedRequestBody())
+	assert.Equal(t, uint64(3), h.BufferedRequestBody().GetSize()) // "req"
+	assert.Equal(t, uint64(0), h.ReceivedRequestBody().GetSize()) // empty by default
 
 	assert.True(t, h.ReceivedBufferedRequestBody())
 	assert.False(t, h.ReceivedBufferedResponseBody())
