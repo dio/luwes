@@ -72,13 +72,25 @@ build-linux-arm64: $(ZIG_BIN)
 .PHONY: build-linux
 build-linux: build-linux-amd64 build-linux-arm64
 
+# Cross-compile all examples for Linux amd64 (used by CI)
+.PHONY: build-linux-amd64-examples
+build-linux-amd64-examples: $(ZIG_BIN)
+	@mkdir -p dist
+	@for example in hello header-auth observability; do \
+		echo "==> building $$example"; \
+		TARGET=x86_64-linux-gnu.2.28 \
+		CC=$(CURDIR)/scripts/zigcc.sh \
+		CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+		go build -trimpath -buildmode=c-shared \
+			-o dist/lib$${example}.linux-amd64.so ./examples/$${example}/cmd || exit 1; \
+	done
+
 # Verify ELF output
 .PHONY: verify
 verify:
-	@file dist/lib$(EXAMPLE).linux-amd64.so | grep -q 'ELF 64-bit' \
-		&& echo "amd64: OK" || echo "amd64: FAIL"
-	@file dist/lib$(EXAMPLE).linux-arm64.so | grep -q 'ELF 64-bit' \
-		&& echo "arm64: OK" || echo "arm64: FAIL"
+	@for f in dist/*.linux-amd64.so; do \
+		file "$$f" | grep -q 'ELF 64-bit' && echo "OK: $$f" || { echo "FAIL: $$f"; exit 1; }; \
+	done
 
 # Start Envoy with the filter (foreground)
 .PHONY: run
@@ -135,6 +147,10 @@ observe: build $(ENVOY_BIN)
 	$(ENVOY_BIN) -c examples/observability/envoy-otel.yaml --log-level warning
 
 
+.PHONY: vet
+vet:
+	go vet ./...
+
 .PHONY: test
 test:
 	go test -race ./...
@@ -142,6 +158,10 @@ test:
 .PHONY: format
 format:
 	$(GO_TOOL) golangci-lint fmt
+
+.PHONY: format-check
+format-check:
+	$(GO_TOOL) golangci-lint fmt --diff .
 
 .PHONY: lint
 lint:
@@ -155,6 +175,16 @@ bench:
 bench-profile:
 	go test -bench=. -benchmem -memprofile=bench/mem.out ./bench/
 	go tool pprof -alloc_objects -http=:8080 bench/mem.out
+
+# Run e2e tests against a compiled .so and a local Envoy binary.
+# Requires: make build-linux-amd64 EXAMPLE=header-auth (on linux)
+#           or: make build EXAMPLE=header-auth (on darwin, for local dev)
+# ENVOY_BIN defaults to .bin/envoy (downloaded by this Makefile).
+# LUWES_SO  defaults to dist/libheader-auth.so.
+.PHONY: e2e
+e2e: $(ENVOY_BIN)
+	ENVOY_BIN=$(ENVOY_BIN) LUWES_SO=$(CURDIR)/dist/libheader-auth.so \
+	go test -C e2e -tags=e2e -v -timeout=60s -run TestHeaderAuth ./...
 
 # Sync abi.h from envoy at a given commit
 # Usage: make sync-abi COMMIT=<hash>
@@ -180,3 +210,4 @@ clean:
 .PHONY: tidy
 tidy:
 	go mod tidy
+

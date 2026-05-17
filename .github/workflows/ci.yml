@@ -9,10 +9,10 @@ on:
     - cron: "0 6 * * 1" # weekly Monday 06:00 UTC (abi-drift only)
 
 # SHAs pinned to latest tags as of 2025-05-17:
-#   actions/checkout@v4                   34e114876b0b11c390a56381ad16ebd13914f8d5
-#   actions/setup-go@v5                   40f1582b2485089dde7abd97c1529aa768e1baff
-#   actions/cache@v4                      0057852bfaa89a56745cba8c7296529d2fc39830
-#   actions/upload-artifact@v4            ea165f8d65b6e75b540449e92b4886f43607fa02
+#   actions/checkout@v4          34e114876b0b11c390a56381ad16ebd13914f8d5
+#   actions/setup-go@v5          40f1582b2485089dde7abd97c1529aa768e1baff
+#   actions/cache@v4             0057852bfaa89a56745cba8c7296529d2fc39830
+#   actions/upload-artifact@v4   ea165f8d65b6e75b540449e92b4886f43607fa02
 # golangci-lint pinned in tools/go.mod via `tool` directive: v2.1.6
 
 env:
@@ -22,9 +22,8 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # lint: golangci-lint fmt (format) + run (lint)
-  # Version is pinned in tools/go.mod via the `tool` directive (Go 1.24).
-  # Invoked with GOWORK=off so -modfile works outside workspace mode.
+  # lint: make format-check + make lint
+  # golangci-lint version is pinned in tools/go.mod (`tool` directive, Go 1.24).
   # ---------------------------------------------------------------------------
   lint:
     name: lint
@@ -37,14 +36,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: format check
-        run: GOWORK=off go tool -modfile=tools/go.mod golangci-lint fmt --diff .
-
-      - name: lint
-        run: GOWORK=off go tool -modfile=tools/go.mod golangci-lint run --timeout 5m
+      - run: make format-check
+      - run: make lint
 
   # ---------------------------------------------------------------------------
-  # test: vet + unit tests (no real Envoy needed)
+  # test: make vet + make test
   # ---------------------------------------------------------------------------
   test:
     name: test
@@ -57,20 +53,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: go build
-        run: go build ./...
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: go test
-        run: go test -race ./...
+      - run: make vet
+      - run: make test
 
   # ---------------------------------------------------------------------------
-  # bench: alloc regression gate
-  # Fails the build if any benchmark regresses vs bench/BASELINE.txt.
-  # The baseline file is committed to the repo and updated manually via
-  # `make bench > bench/BASELINE.txt` after an intentional improvement.
+  # bench: make bench + alloc regression gate
+  # Hard ceilings per benchmark -- ns/op not gated (CI runner variance).
   # ---------------------------------------------------------------------------
   bench:
     name: bench (alloc regression)
@@ -83,14 +71,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: run benchmarks
-        run: go test -bench=. -benchmem -count=5 ./bench/ | tee bench/current.txt
+      - run: make bench
 
       - name: alloc regression gate
         run: |
-          # Parse allocs/op from benchmark output and enforce hard ceilings.
-          # ns/op is not gated -- CI runners vary too much.
-          # Ceiling = 0 for hot paths, 2 for paths that must allocate (e.g. error response).
           python3 - <<'EOF'
           import sys, re
 
@@ -106,7 +90,7 @@ jobs:
           }
 
           failures = []
-          with open("bench/current.txt") as f:
+          with open("bench/results.txt") as f:
               for line in f:
                   m = re.match(r"(Benchmark\w+)-\d+\s+\d+\s+[\d.]+\s+\S+\s+[\d.]+\s+B/op\s+(\d+)\s+allocs/op", line)
                   if not m:
@@ -127,10 +111,11 @@ jobs:
         if: always()
         with:
           name: bench-results
-          path: bench/current.txt
+          path: bench/results.txt
 
   # ---------------------------------------------------------------------------
-  # build-linux: cross-compile all examples to linux/amd64 .so
+  # build-linux: make build-linux-amd64-examples + make verify
+  # Zig cached in .bin/ to match Makefile convention.
   # ---------------------------------------------------------------------------
   build-linux:
     name: cross-compile linux
@@ -147,34 +132,18 @@ jobs:
         id: cache-zig
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: /tmp/zig
+          path: .bin/zig
           key: zig-${{ env.ZIG_VERSION }}-x86_64-linux
 
       - name: download zig
         if: steps.cache-zig.outputs.cache-hit != 'true'
         run: |
           URL="https://ziglang.org/download/${{ env.ZIG_VERSION }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}.tar.xz"
-          curl -fsSL "$URL" | tar -xJ -C /tmp
-          mv /tmp/zig-x86_64-linux-${{ env.ZIG_VERSION }} /tmp/zig
+          mkdir -p .bin
+          curl -fsSL "$URL" | tar -xJ --strip-components=1 -C .bin
 
-      - name: build all examples (linux/amd64)
-        run: |
-          mkdir -p dist
-          for example in hello header-auth observability; do
-            echo "==> building $example"
-            TARGET=x86_64-linux-gnu.2.28 \
-            ZIG=/tmp/zig/zig \
-            CC=$(pwd)/scripts/zigcc.sh \
-            CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-            go build -trimpath -buildmode=c-shared \
-              -o dist/lib${example}.linux-amd64.so ./examples/${example}/cmd
-          done
-
-      - name: verify ELF
-        run: |
-          for f in dist/*.linux-amd64.so; do
-            file "$f" | grep -q 'ELF 64-bit' && echo "OK: $f" || { echo "FAIL: $f"; exit 1; }
-          done
+      - run: make build-linux-amd64-examples ZIG_BIN=.bin/zig
+      - run: make verify
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -182,8 +151,8 @@ jobs:
           path: dist/*.linux-amd64.so
 
   # ---------------------------------------------------------------------------
-  # e2e: real Envoy + compiled .so, header-auth acceptance tests
-  # Runs on push/PR only -- too slow and stateful for schedule.
+  # e2e: make e2e (header-auth, real Envoy v1.38.0)
+  # Zig and Envoy cached in .bin/ to match Makefile convention.
   # ---------------------------------------------------------------------------
   e2e:
     name: e2e (header-auth)
@@ -201,51 +170,34 @@ jobs:
         id: cache-zig
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: /tmp/zig
+          path: .bin/zig
           key: zig-${{ env.ZIG_VERSION }}-x86_64-linux
 
       - name: download zig
         if: steps.cache-zig.outputs.cache-hit != 'true'
         run: |
           URL="https://ziglang.org/download/${{ env.ZIG_VERSION }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}.tar.xz"
-          curl -fsSL "$URL" | tar -xJ -C /tmp
-          mv /tmp/zig-x86_64-linux-${{ env.ZIG_VERSION }} /tmp/zig
+          mkdir -p .bin
+          curl -fsSL "$URL" | tar -xJ --strip-components=1 -C .bin
 
       - name: cache envoy
         id: cache-envoy
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: /tmp/envoy
+          path: .bin/envoy
           key: envoy-${{ env.ENVOY_VERSION }}-linux-amd64
 
       - name: download envoy
         if: steps.cache-envoy.outputs.cache-hit != 'true'
-        run: |
-          URL="https://archive.tetratelabs.io/envoy/download/v${{ env.ENVOY_VERSION }}/envoy-v${{ env.ENVOY_VERSION }}-linux-amd64.tar.xz"
-          mkdir -p /tmp/envoy
-          curl -fsSL "$URL" | tar -xJ --strip-components=2 -C /tmp/envoy
-          chmod +x /tmp/envoy/envoy
+        run: make .bin/envoy
 
       - name: build header-auth .so
-        run: |
-          mkdir -p dist
-          TARGET=x86_64-linux-gnu.2.28 \
-          ZIG=/tmp/zig/zig \
-          CC=$(pwd)/scripts/zigcc.sh \
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-          go build -trimpath -buildmode=c-shared \
-            -o dist/libheader-auth.so ./examples/header-auth/cmd
+        run: make build-linux-amd64 EXAMPLE=header-auth ZIG_BIN=.bin/zig
 
-      - name: run e2e tests
-        env:
-          ENVOY_BIN: /tmp/envoy/envoy
-          LUWES_SO: ${{ github.workspace }}/dist/libheader-auth.so
-        run: |
-          cd e2e
-          go test -tags=e2e -v -timeout=60s -run TestHeaderAuth ./...
+      - run: make e2e
 
   # ---------------------------------------------------------------------------
-  # abi-drift: weekly check that vendored abi.h matches envoy/main
+  # abi-drift: make check-abi-drift (weekly schedule only)
   # ---------------------------------------------------------------------------
   abi-drift:
     name: check abi drift (weekly)
@@ -254,12 +206,4 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: check drift
-        run: |
-          LATEST=$(curl -fsSL https://raw.githubusercontent.com/envoyproxy/envoy/main/source/extensions/dynamic_modules/abi/abi.h)
-          if ! diff -q <(echo "$LATEST") abi/abi.h > /dev/null 2>&1; then
-            echo "::warning::abi.h has drifted from envoy/main -- run: make sync-abi"
-            diff <(echo "$LATEST") abi/abi.h | head -80 || true
-          else
-            echo "abi.h is in sync with envoy/main"
-          fi
+      - run: make check-abi-drift
