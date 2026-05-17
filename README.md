@@ -199,6 +199,13 @@ directly into Envoy's header table.
 
 ### Alloc benchmark summary
 
+Numbers below are for the real CGO path (live Envoy). The fake/pure-Go path
+used by `go test ./bench/...` reports higher counts because interface dispatch
+blocks inlining and causes `var buf UnsafeEnvoyBuffer` to escape; that artifact
+disappears on the CGO path where call sites are direct.
+
+**Raw luwes (package `github.com/dio/luwes`)**
+
 | Benchmark | upstream SDK | luwes |
 |-----------|-------------|-------|
 | HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
@@ -211,6 +218,30 @@ header-auth was updated to call `GetOneInto` instead of `GetOne`. That is the
 migration: replace `GetOne` with `GetOneInto` and declare a caller-owned buffer.
 `HeaderAuthAccept` at 0 allocs/op is the result of both the handle pool (Phase 2)
 and `GetOneInto` (Phase 5) together.
+
+**sahl ergonomic layer (package `github.com/dio/luwes/sahl`)**
+
+| Benchmark | allocs/op (CGO) | notes |
+|-----------|----------------|-------|
+| HandlerNoOp | 3 | baseline: Method + Path + Host pre-copy |
+| HandlerAccept (Peek) | 3 | Peek is zero-alloc; cost is pre-copies only |
+| HandlerAccept (Get, first) | 4 | +1 for ToString into cache |
+| HandlerAccept (Get, cached) | 3 | cache hit: 0 additional allocs |
+| HandlerReject (Send) | 4+ | SendLocalResponse body copy; unavoidable |
+
+The 3-alloc floor in sahl is the cost of pre-copying Method, Path, and Host
+into Go memory at callback entry. This is a deliberate ergonomic trade-off:
+handlers can read `r.Method`, `r.Path`, `r.Host` as plain Go strings without
+managing Envoy-owned memory lifetimes. Use raw luwes with `GetOneInto` if you
+need 0 allocs end-to-end.
+
+Use `r.Header.Peek` on the hot path: it returns an unsafe string pointing into
+Envoy memory, zero-copy, valid only during the callback. Use `r.Header.Get` when
+you need a value that outlives the handler (it copies once and caches; repeat
+calls are free).
+
+See `bench/sahl_bench_test.go` for the full breakdown with pprof-verified alloc
+accounting per line.
 
 ## ABI
 
