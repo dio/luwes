@@ -98,17 +98,30 @@ latency-sensitive (auth, routing, rate limiting) and the author can reason about
 lifetimes.
 
 Use jisr when you want `net/http` ergonomics and you are willing to pay for
-them. Use luwes when you are writing the hot path and you are not.
+them. Use luwes when you are writing the hot path and every allocation is
+a cost you would rather not pay.
 
 ## The Remaining Allocation
 
-After the handle pool and `GetOne`, one allocation source remains: the
+After the handle pool and `GetOne`, one allocation source remained: the
 `&valueView` CGO escape inside `getSingleHeader`. A real flamegraph from 500k
-requests under Envoy 1.38.0 shows this as 98.90% of all allocations. It is
-structural -- inherent to how Go pinning works across CGO boundaries. The only
-fix is an ABI-level change: expose a buffer-fill API so the value is written
-into caller-provided memory rather than returned by pointer. That is a v2 API
-change and is tracked separately.
+requests under Envoy 1.38.0 showed this as 98.90% of all allocations. It is
+structural -- inherent to how Go pinning works across CGO boundaries.
+
+`GetOneInto(key string, out *UnsafeEnvoyBuffer) bool` eliminates it. The
+caller provides the destination buffer; the compiler can stack-allocate it at
+the call site because its address never crosses the CGO boundary as a local.
+Instead, `out` is cast to `*C.envoy_dynamic_module_type_envoy_buffer` via
+`unsafe.Pointer`. The cast is safe: both structs are 16 bytes with `ptr` at
+offset 0 and `length` at offset 8 -- verified at build time.
+
+The net result on the accept path with `GetOneInto`:
+
+```
+BenchmarkGetOneInto   0 B/op   0 allocs/op   ~17 ns/op
+```
+
+The 98.90% in the flamegraph is gone.
 
 ## ABI Vendoring
 
