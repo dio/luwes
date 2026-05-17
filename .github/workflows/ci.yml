@@ -2,7 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "abi-drift/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
