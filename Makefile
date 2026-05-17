@@ -162,6 +162,23 @@ vet:
 test:
 	go test -race ./...
 
+# Run unit tests for all examples (pure Go, no Envoy required).
+.PHONY: test-examples
+test-examples:
+	go test -race ./examples/...
+
+# Run unit tests for all sahl examples.
+.PHONY: test-sahl
+test-sahl:
+	go test -race ./examples/sahl/...
+
+# Run unit tests for a specific example.
+# Usage: make test-example EXAMPLE=sahl/decoder
+EXAMPLE ?= header-auth
+.PHONY: test-example
+test-example:
+	go test -race -v ./examples/$(EXAMPLE)/...
+
 .PHONY: format
 format:
 	$(GO_TOOL) golangci-lint fmt
