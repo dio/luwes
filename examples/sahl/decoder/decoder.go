@@ -126,12 +126,12 @@ func decoderResponse(w *sahl.Writer, chunk *sahl.ResponseChunk) {
 
 // respState holds per-request response state.
 type respState struct {
-	cluster     string
-	sentAt      time.Time
-	firstChunk  time.Time
-	isSSE       bool
-	ring        *buffer.HeadTail // SSE: head+tail ring
-	jsonBuf     []byte           // JSON: accumulated body
+	cluster    string
+	sentAt     time.Time
+	firstChunk time.Time
+	isSSE      bool
+	ring       *buffer.HeadTail // SSE: head+tail ring
+	jsonBuf    []byte           // JSON: accumulated body
 }
 
 // clusterFromMeta reads the cluster set by decoderRequest from filter metadata.

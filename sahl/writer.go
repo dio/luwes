@@ -14,10 +14,10 @@ type Writer struct {
 	scheduler shared.Scheduler // acquired once in OnRequestHeaders, used in Go()
 
 	// queued mutations: slices retain capacity across pool reuse
-	reqMuts      []headerMut
-	respHdrMuts  []headerMut // response headers sent with SendBytes/Send
-	metaMuts     []metaMut
-	counterMuts  []counterMut
+	reqMuts     []headerMut
+	respHdrMuts []headerMut // response headers sent with SendBytes/Send
+	metaMuts    []metaMut
+	counterMuts []counterMut
 
 	responded    bool // Send/SendBytes was called
 	routeCleared bool

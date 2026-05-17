@@ -104,8 +104,8 @@ func (h *FakeFilterHandle) ResponseTrailers() shared.HeaderMap {
 
 // -- Body accessors --
 
-func (h *FakeFilterHandle) BufferedRequestBody() shared.BodyBuffer  { return h.reqBody }
-func (h *FakeFilterHandle) ReceivedRequestBody() shared.BodyBuffer  { return h.reqBody }
+func (h *FakeFilterHandle) BufferedRequestBody() shared.BodyBuffer { return h.reqBody }
+func (h *FakeFilterHandle) ReceivedRequestBody() shared.BodyBuffer { return h.reqBody }
 
 // SetRequestBody replaces the request body on the handle. For use in tests
 // that need to set the body after construction (e.g. body-aware filter tests

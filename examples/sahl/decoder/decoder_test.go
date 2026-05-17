@@ -104,18 +104,13 @@ func buildDecoderFactory(t *testing.T) shared.HttpFilterFactory {
 
 // runRequest runs a body-aware filter request through the full lifecycle.
 // Returns the x-cluster header value set by the filter.
-func runRequest(t *testing.T, body []byte, extraHeaders ...map[string]string) (string, shared.BodyStatus) {
+func runRequest(t *testing.T, body []byte) (string, shared.BodyStatus) {
 	t.Helper()
 	factory := buildDecoderFactory(t)
 
 	headers := map[string]string{
 		":method": "POST",
 		":path":   "/v1/chat/completions",
-	}
-	for _, extra := range extraHeaders {
-		for k, v := range extra {
-			headers[k] = v
-		}
 	}
 
 	fh := fake.NewFilterHandle(
