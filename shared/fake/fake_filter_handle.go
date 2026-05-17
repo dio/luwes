@@ -57,11 +57,13 @@ func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 // Methods that would require a real Envoy scheduler are no-ops; tests that
 // need async behaviour should use the real e2e test suite.
 type FakeFilterHandle struct {
-	reqHeaders  *FakeHeaderMap
-	respHeaders *FakeHeaderMap
-	reqBody     *FakeBodyBuffer
-	respBody    *FakeBodyBuffer
-	metadata    map[string]map[string]any
+	reqHeaders   *FakeHeaderMap
+	respHeaders  *FakeHeaderMap
+	reqBody      *FakeBodyBuffer
+	respBody     *FakeBodyBuffer
+	bufferedReq  bool
+	bufferedResp bool
+	metadata     map[string]map[string]any
 
 	// Recorded side effects for assertions.
 	LocalResponses []LocalResponse
@@ -93,8 +95,13 @@ func (h *FakeFilterHandle) BufferedRequestBody() shared.BodyBuffer  { return h.r
 func (h *FakeFilterHandle) ReceivedRequestBody() shared.BodyBuffer  { return h.reqBody }
 func (h *FakeFilterHandle) BufferedResponseBody() shared.BodyBuffer { return h.respBody }
 func (h *FakeFilterHandle) ReceivedResponseBody() shared.BodyBuffer { return h.respBody }
-func (h *FakeFilterHandle) ReceivedBufferedRequestBody() bool       { return false }
-func (h *FakeFilterHandle) ReceivedBufferedResponseBody() bool      { return false }
+func (h *FakeFilterHandle) ReceivedBufferedRequestBody() bool       { return h.bufferedReq }
+func (h *FakeFilterHandle) ReceivedBufferedResponseBody() bool      { return h.bufferedResp }
+
+// SetReceivedBufferedRequestBody controls what ReceivedBufferedRequestBody returns.
+// Use in tests to simulate buffered vs streaming body delivery.
+func (h *FakeFilterHandle) SetReceivedBufferedRequestBody(v bool)  { h.bufferedReq = v }
+func (h *FakeFilterHandle) SetReceivedBufferedResponseBody(v bool) { h.bufferedResp = v }
 
 // -- Flow control --
 
