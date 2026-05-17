@@ -1,5 +1,9 @@
 version: "2"
 
+formatters:
+  enable:
+    - gofmt
+
 linters:
   default: none
   enable:
@@ -8,8 +12,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - gosimple
     - nilerr
     - prealloc
     - unparam
@@ -20,19 +22,19 @@ linters-settings:
   govet:
     enable-all: true
     disable:
-      - shadow     # too noisy for filter code
-      - fieldalignment  # we hand-tune layouts already
+      - shadow          # too noisy for filter code
+      - fieldalignment  # hand-tuned layouts
 
 issues:
   exclude-dirs:
-    - bench        # benchmarks use testing.B idioms that trigger unused
+    - bench
   exclude-rules:
     - path: "_test\\.go"
       linters:
         - errcheck
     - path: "shared/fake/"
       linters:
-        - unparam  # fake implementations accept params they don't use
+        - unparam
     - path: "examples/"
       linters:
         - unparam

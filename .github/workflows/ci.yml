@@ -13,7 +13,7 @@ on:
 #   actions/setup-go@v5                   40f1582b2485089dde7abd97c1529aa768e1baff
 #   actions/cache@v4                      0057852bfaa89a56745cba8c7296529d2fc39830
 #   actions/upload-artifact@v4            ea165f8d65b6e75b540449e92b4886f43607fa02
-#   golangci/golangci-lint-action@v9.2.0  1e7e51e771db61008b38414a730f564565cf7c20
+# golangci-lint pinned in tools/go.mod via `tool` directive: v2.1.6
 
 env:
   ENVOY_VERSION: "1.38.0"
@@ -22,7 +22,9 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # lint: gofmt + golangci-lint
+  # lint: golangci-lint fmt (format) + run (lint)
+  # Version is pinned in tools/go.mod via the `tool` directive (Go 1.24).
+  # Invoked with GOWORK=off so -modfile works outside workspace mode.
   # ---------------------------------------------------------------------------
   lint:
     name: lint
@@ -34,20 +36,12 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: false
 
-      - name: gofmt
-        run: |
-          out=$(gofmt -l .)
-          if [ -n "$out" ]; then
-            echo "gofmt diff in:"
-            echo "$out"
-            exit 1
-          fi
+      - name: format check
+        run: GOWORK=off go tool -modfile=tools/go.mod golangci-lint fmt --diff .
 
-      - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
-        with:
-          version: v2.1.6
+      - name: lint
+        run: GOWORK=off go tool -modfile=tools/go.mod golangci-lint run --timeout 5m
 
   # ---------------------------------------------------------------------------
   # test: vet + unit tests (no real Envoy needed)

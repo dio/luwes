@@ -1623,26 +1623,26 @@ func (h *dymHttpFilterHandle) reset(
 
 	// Overwrite embedded value-type structs with the new hostPluginPtr.
 	// Header/body type constants are fixed by the ABI.
-	h.requestHeaderMap  = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(0)}
+	h.requestHeaderMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(0)}
 	h.requestTrailerMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(1)}
 	h.responseHeaderMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(2)}
 	h.responseTrailerMap = dymHeaderMap{hostPluginPtr: hostPluginPtr, headerType: C.envoy_dynamic_module_type_http_header_type(3)}
 
-	h.receivedRequestBody  = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(0)}
-	h.bufferedRequestBody  = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(1)}
+	h.receivedRequestBody = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(0)}
+	h.bufferedRequestBody = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(1)}
 	h.receivedResponseBody = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(2)}
 	h.bufferedResponseBody = dymBodyBuffer{hostPluginPtr: hostPluginPtr, bufferType: C.envoy_dynamic_module_type_http_body_type(3)}
 
 	// Zero per-request state.
-	h.plugin            = nil
-	h.scheduler         = nil
-	h.streamCompleted   = false
-	h.streamDestoried   = false
+	h.plugin = nil
+	h.scheduler = nil
+	h.streamCompleted = false
+	h.streamDestoried = false
 	h.localResponseSent = false
 
 	// nil maps -- lazy-init on first callout/stream use.
 	h.calloutCallbacks = nil
-	h.streamCallbacks  = nil
+	h.streamCallbacks = nil
 
 	// Reset slice length, preserve backing array capacity.
 	h.recordedSharedData = h.recordedSharedData[:0]

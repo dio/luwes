@@ -5,7 +5,7 @@ import (
 )
 
 func getBodyContent(bufferedBody, receivedBody shared.BodyBuffer, isBuffered bool) []byte {
-	var bodySize uint64 = bufferedBody.GetSize()
+	var bodySize = bufferedBody.GetSize()
 	if !isBuffered {
 		bodySize += receivedBody.GetSize()
 	}

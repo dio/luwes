@@ -39,19 +39,19 @@ type SilentHeaderMap struct {
 // Set updates in place without recording the mutation.
 func (h *SilentHeaderMap) Set(key, value string) {
 	lower := strings.ToLower(key)
-	existing := h.FakeHeaderMap.headers[lower]
+	existing := h.headers[lower]
 	if cap(existing) > 0 {
-		h.FakeHeaderMap.headers[lower] = existing[:1]
-		h.FakeHeaderMap.headers[lower][0] = value
+		h.headers[lower] = existing[:1]
+		h.headers[lower][0] = value
 	} else {
-		h.FakeHeaderMap.headers[lower] = []string{value}
+		h.headers[lower] = []string{value}
 	}
 }
 
 // Add updates in place without recording the mutation.
 func (h *SilentHeaderMap) Add(key, value string) {
 	lower := strings.ToLower(key)
-	h.FakeHeaderMap.headers[lower] = append(h.FakeHeaderMap.headers[lower], value)
+	h.headers[lower] = append(h.headers[lower], value)
 }
 
 // -- compile-time interface checks --

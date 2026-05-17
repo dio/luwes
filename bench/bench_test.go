@@ -27,10 +27,10 @@ func (f *fakeConfigHandle) HttpCallout(_ string, _ [][2]string, _ []byte, _ uint
 func (f *fakeConfigHandle) StartHttpStream(_ string, _ [][2]string, _ []byte, _ bool, _ uint64, _ shared.HttpStreamCallback) (shared.HttpCalloutInitResult, uint64) {
 	return shared.HttpCalloutInitClusterNotFound, 0
 }
-func (f *fakeConfigHandle) SendHttpStreamData(_ uint64, _ []byte, _ bool) bool    { return false }
-func (f *fakeConfigHandle) SendHttpStreamTrailers(_ uint64, _ [][2]string) bool   { return false }
-func (f *fakeConfigHandle) ResetHttpStream(_ uint64)                              {}
-func (f *fakeConfigHandle) GetScheduler() shared.Scheduler                        { return nil }
+func (f *fakeConfigHandle) SendHttpStreamData(_ uint64, _ []byte, _ bool) bool  { return false }
+func (f *fakeConfigHandle) SendHttpStreamTrailers(_ uint64, _ [][2]string) bool { return false }
+func (f *fakeConfigHandle) ResetHttpStream(_ uint64)                            {}
+func (f *fakeConfigHandle) GetScheduler() shared.Scheduler                      { return nil }
 
 // -- Benchmarks --
 
@@ -130,16 +130,16 @@ func BenchmarkGetMiss(b *testing.B) {
 // Documents the double-alloc per call.
 func BenchmarkGetAll(b *testing.B) {
 	fh := fake.NewFakeHeaderMap(map[string]string{
-		"authorization":    "Bearer token",
-		":path":            "/v1/chat/completions",
-		":method":          "POST",
-		"content-type":     "application/json",
-		"content-length":   "128",
-		"accept":           "application/json",
-		"user-agent":       "test/1.0",
-		"x-request-id":     "abc-123",
-		"x-forwarded-for":  "1.2.3.4",
-		"x-api-key":        "secret",
+		"authorization":   "Bearer token",
+		":path":           "/v1/chat/completions",
+		":method":         "POST",
+		"content-type":    "application/json",
+		"content-length":  "128",
+		"accept":          "application/json",
+		"user-agent":      "test/1.0",
+		"x-request-id":    "abc-123",
+		"x-forwarded-for": "1.2.3.4",
+		"x-api-key":       "secret",
 	})
 
 	b.ReportAllocs()

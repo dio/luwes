@@ -1,8 +1,8 @@
 package main
 
 import (
-	sdk  "github.com/dio/luwes"
-	_    "github.com/dio/luwes/abi_impl"
+	sdk "github.com/dio/luwes"
+	_ "github.com/dio/luwes/abi_impl"
 	hello "github.com/dio/luwes/examples/hello"
 )
 

@@ -1,3 +1,5 @@
+GO_TOOL := go tool -modfile=tools/go.mod
+
 ZIG_VERSION   := 0.16.0
 ZIG_BIN       := $(CURDIR)/.bin/zig
 
@@ -133,8 +135,17 @@ observe: build $(ENVOY_BIN)
 	$(ENVOY_BIN) -c examples/observability/envoy-otel.yaml --log-level warning
 
 
+.PHONY: test
 test:
 	go test -race ./...
+
+.PHONY: format
+format:
+	GOWORK=off $(GO_TOOL) golangci-lint fmt
+
+.PHONY: lint
+lint:
+	GOWORK=off $(GO_TOOL) golangci-lint run --timeout 5m
 
 .PHONY: bench
 bench:

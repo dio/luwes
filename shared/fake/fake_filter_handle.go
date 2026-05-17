@@ -98,9 +98,9 @@ func (h *FakeFilterHandle) ReceivedBufferedResponseBody() bool      { return fal
 
 // -- Flow control --
 
-func (h *FakeFilterHandle) ContinueRequest()  { h.ContinuedReq++ }
-func (h *FakeFilterHandle) ContinueResponse() { h.ContinuedResp++ }
-func (h *FakeFilterHandle) ClearRouteCache()  {}
+func (h *FakeFilterHandle) ContinueRequest()     { h.ContinuedReq++ }
+func (h *FakeFilterHandle) ContinueResponse()    { h.ContinuedResp++ }
+func (h *FakeFilterHandle) ClearRouteCache()     {}
 func (h *FakeFilterHandle) RefreshRouteCluster() {}
 
 // -- Local response --
@@ -184,7 +184,7 @@ func (h *FakeFilterHandle) GetAttributeBool(_ shared.AttributeID) (bool, bool)  
 func (h *FakeFilterHandle) GetFilterState(_ string) (shared.UnsafeEnvoyBuffer, bool) {
 	return shared.UnsafeEnvoyBuffer{}, false
 }
-func (h *FakeFilterHandle) SetFilterState(key string, value []byte)         {}
+func (h *FakeFilterHandle) SetFilterState(key string, value []byte)           {}
 func (h *FakeFilterHandle) SetFilterStateTyped(key string, value []byte) bool { return false }
 func (h *FakeFilterHandle) GetFilterStateTyped(_ string) (shared.UnsafeEnvoyBuffer, bool) {
 	return shared.UnsafeEnvoyBuffer{}, false
@@ -192,9 +192,9 @@ func (h *FakeFilterHandle) GetFilterStateTyped(_ string) (shared.UnsafeEnvoyBuff
 
 // -- Cross-phase data --
 
-func (h *FakeFilterHandle) GetData(_ string) any        { return nil }
-func (h *FakeFilterHandle) SetData(_ string, _ any)     {}
-func (h *FakeFilterHandle) GetMostSpecificConfig() any  { return nil }
+func (h *FakeFilterHandle) GetData(_ string) any       { return nil }
+func (h *FakeFilterHandle) SetData(_ string, _ any)    {}
+func (h *FakeFilterHandle) GetMostSpecificConfig() any { return nil }
 
 // -- Logging --
 
@@ -217,7 +217,7 @@ func (h *FakeFilterHandle) HttpCallout(_ string, _ [][2]string, _ []byte, _ uint
 func (h *FakeFilterHandle) StartHttpStream(_ string, _ [][2]string, _ []byte, _ bool, _ uint64, _ shared.HttpStreamCallback) (shared.HttpCalloutInitResult, uint64) {
 	return shared.HttpCalloutInitClusterNotFound, 0
 }
-func (h *FakeFilterHandle) SendHttpStreamData(_ uint64, _ []byte, _ bool) bool { return false }
+func (h *FakeFilterHandle) SendHttpStreamData(_ uint64, _ []byte, _ bool) bool  { return false }
 func (h *FakeFilterHandle) SendHttpStreamTrailers(_ uint64, _ [][2]string) bool { return false }
 func (h *FakeFilterHandle) ResetHttpStream(_ uint64)                            {}
 
@@ -246,17 +246,21 @@ func (h *FakeFilterHandle) IncrementCounterValue(_ shared.MetricID, _ uint64, _ 
 
 // -- Misc --
 
-func (h *FakeFilterHandle) AddCustomFlag(_ string)                                              {}
-func (h *FakeFilterHandle) GetWorkerIndex() uint32                                             { return 0 }
-func (h *FakeFilterHandle) GetBufferLimit() uint64                                             { return 0 }
-func (h *FakeFilterHandle) SetBufferLimit(_ uint64)                                            {}
-func (h *FakeFilterHandle) GetActiveSpan() shared.Span                                        { return nil }
-func (h *FakeFilterHandle) GetClusterName() (shared.UnsafeEnvoyBuffer, bool)                  { return shared.UnsafeEnvoyBuffer{}, false }
-func (h *FakeFilterHandle) GetClusterHostCounts(_ uint32) (shared.ClusterHostCounts, bool)    { return shared.ClusterHostCounts{}, false }
-func (h *FakeFilterHandle) SetUpstreamOverrideHost(_ string, _ bool) bool                     { return false }
-func (h *FakeFilterHandle) ResetStream(_ shared.HttpFilterStreamResetReason, _ string)        {}
-func (h *FakeFilterHandle) SendGoAwayAndClose(_ bool)                                         {}
-func (h *FakeFilterHandle) RecreateStream(_ [][2]string) bool                                 { return false }
+func (h *FakeFilterHandle) AddCustomFlag(_ string)     {}
+func (h *FakeFilterHandle) GetWorkerIndex() uint32     { return 0 }
+func (h *FakeFilterHandle) GetBufferLimit() uint64     { return 0 }
+func (h *FakeFilterHandle) SetBufferLimit(_ uint64)    {}
+func (h *FakeFilterHandle) GetActiveSpan() shared.Span { return nil }
+func (h *FakeFilterHandle) GetClusterName() (shared.UnsafeEnvoyBuffer, bool) {
+	return shared.UnsafeEnvoyBuffer{}, false
+}
+func (h *FakeFilterHandle) GetClusterHostCounts(_ uint32) (shared.ClusterHostCounts, bool) {
+	return shared.ClusterHostCounts{}, false
+}
+func (h *FakeFilterHandle) SetUpstreamOverrideHost(_ string, _ bool) bool              { return false }
+func (h *FakeFilterHandle) ResetStream(_ shared.HttpFilterStreamResetReason, _ string) {}
+func (h *FakeFilterHandle) SendGoAwayAndClose(_ bool)                                  {}
+func (h *FakeFilterHandle) RecreateStream(_ [][2]string) bool                          { return false }
 func (h *FakeFilterHandle) SetSocketOptionInt(_, _ int64, _ shared.SocketOptionState, _ shared.SocketDirection, _ int64) bool {
 	return false
 }
