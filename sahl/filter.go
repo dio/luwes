@@ -172,6 +172,14 @@ func (f *sahlFilter) OnResponseBody(body shared.BodyBuffer, endStream bool) shar
 }
 
 func (f *sahlFilter) OnStreamComplete() {
+	// Flush response-side mutations (IncrementCounter, SetMetadata) queued by
+	// the response observer. This is the guaranteed-last point where the handle
+	// is still valid and the response body has been fully delivered.
+	// Called even if endStream was never delivered (client disconnect, trailers).
+	if f.handler != nil && f.handler.responseFn != nil && f.writer != nil {
+		f.writer.flushResponseMutations()
+	}
+
 	// Cancel Go() goroutine context if one is running.
 	if f.writer != nil && f.writer.goCancel != nil {
 		f.writer.goCancel()

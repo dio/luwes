@@ -80,6 +80,11 @@ func (w *Writer) SendBytes(statusCode int, body []byte) {
 	w.handle.SendLocalResponse(uint32(statusCode), nil, body, "sahl")
 }
 
+// Log emits a message to Envoy's logger at the given level.
+func (w *Writer) Log(level shared.LogLevel, format string, args ...any) {
+	w.handle.Log(level, format, args...)
+}
+
 // SetRequestHeader queues a mutation to set a request header before forwarding
 // upstream. Has no effect if Send or SendBytes was called.
 func (w *Writer) SetRequestHeader(key, value string) {
@@ -164,8 +169,28 @@ func (w *Writer) Go(fn func(ctx context.Context)) {
 	}()
 }
 
+// flushResponseMutations applies counter and metadata mutations queued by a
+// response observer. Called after the final OnResponseBody chunk. Unlike
+// flush(), it does not apply request header mutations or call ContinueRequest
+// (the request has already been forwarded upstream at this point).
+func (w *Writer) flushResponseMutations() {
+	for _, m := range w.metaMuts {
+		w.handle.SetMetadata(m.namespace, m.key, m.value)
+	}
+	for _, m := range w.counterMuts {
+		if m.hist {
+			w.handle.RecordHistogramValue(m.id, m.n, m.tags...)
+		} else {
+			w.handle.IncrementCounterValue(m.id, m.n, m.tags...)
+		}
+	}
+	// Clear to avoid double-apply if flush() is called later (shouldn't happen,
+	// but defensive).
+	w.metaMuts = w.metaMuts[:0]
+	w.counterMuts = w.counterMuts[:0]
+}
+
 // flush applies all queued mutations.
-// continueReq must be true only when called from a Go() goroutine via
 // Scheduler.Schedule: in that case Envoy is paused (HeadersStatusStop was
 // returned) and ContinueRequest must be called to resume processing.
 // For synchronous handlers, the caller returns HeadersStatusContinue directly;

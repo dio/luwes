@@ -90,6 +90,11 @@ func (f *sahlFilter) onResponseBody(body shared.BodyBuffer, endStream bool) {
 	if len(chunks) > 0 {
 		// ToUnsafeBytes: zero-copy view into Envoy memory. Valid only during this call.
 		data = chunks[0].ToUnsafeBytes()
+	} else {
+		// Empty chunk (e.g. the trailing 0-length chunk that signals end of stream).
+		// Use an empty non-nil slice so response handlers can distinguish this from
+		// the headers call (Data==nil) using EndStream as the discriminator.
+		data = []byte{}
 	}
 	f.respState.chunk.Data = data
 	f.respState.chunk.EndStream = endStream

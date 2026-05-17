@@ -74,7 +74,8 @@ type ringState struct {
 //   - Once per body chunk: write into ring.
 //   - Once with EndStream == true: parse ring and emit metrics.
 func tapResponse(w *sahl.Writer, chunk *sahl.ResponseChunk) {
-	if chunk.Data == nil {
+	// First call: Data==nil and EndStream==false means response headers.
+	if chunk.Data == nil && !chunk.EndStream {
 		// Headers call: allocate per-request state.
 		s := &ringState{}
 		if !strings.Contains(chunk.ContentType, "text/event-stream") {
@@ -89,17 +90,21 @@ func tapResponse(w *sahl.Writer, chunk *sahl.ResponseChunk) {
 	}
 
 	s, ok := (*chunk.Context).(*ringState)
-	if !ok || s.skip {
+	if !ok || s == nil || s.skip {
 		return
 	}
 
-	s.ring.Write(chunk.Data)
+	if len(chunk.Data) > 0 {
+		s.ring.Write(chunk.Data)
+	}
 
 	if !chunk.EndStream {
 		return
 	}
 
-	u := ExtractUsage(s.ring.Head(), s.ring.Tail())
+	head := s.ring.Head()
+	tail := s.ring.Tail()
+	u := ExtractUsage(head, tail)
 	// Context is zeroed by sahl on pool return; no explicit cleanup needed.
 
 	if u.Input > 0 {

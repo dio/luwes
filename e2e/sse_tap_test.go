@@ -116,20 +116,23 @@ func (s *SSETapSuite) doSSERequest(path string) (int, string) {
 
 // readStat reads a single stat counter from Envoy admin /stats.
 // Returns the integer value or -1 if the stat is not present.
+// Dynamic module custom metrics are prefixed with "dynamicmodulescustom." by Envoy.
 func readStat(t *testing.T, name string) int64 {
 	t.Helper()
-	resp, err := http.Get(adminAddr + "/stats?filter=" + name + "&format=text")
-	if err != nil {
-		t.Logf("readStat: GET /stats failed: %v", err)
-		return -1
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, name+":") {
-			var v int64
-			fmt.Sscanf(strings.TrimPrefix(line, name+":"), " %d", &v)
-			return v
+	// Try both the bare name and the dynamicmodulescustom. prefix.
+	for _, candidate := range []string{"dynamicmodulescustom." + name, name} {
+		resp, err := http.Get(adminAddr + "/stats?filter=" + candidate + "&format=text")
+		if err != nil {
+			continue
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(line, candidate+":") {
+				var v int64
+				fmt.Sscanf(strings.TrimPrefix(line, candidate+":"), " %d", &v)
+				return v
+			}
 		}
 	}
 	return -1
