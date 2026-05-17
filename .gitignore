@@ -2,6 +2,7 @@
 dist/
 bench/mem.out
 bench/results.txt
+bench/profiles/*.out
 *.h.bak
 go.work.sum
 coverage.out

@@ -113,15 +113,25 @@ The 98.90% in the flamegraph is gone. Usage:
 
 ```go
 func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
-    var buf shared.UnsafeEnvoyBuffer
-    if !headers.GetOneInto("x-api-key", &buf) {
+    var key shared.UnsafeEnvoyBuffer
+    if !headers.GetOneInto("x-api-key", &key) {
         f.handle.SendLocalResponse(401, nil, []byte(`{"error":"missing x-api-key"}`), "auth")
         return shared.HeadersStatusStop
     }
-    f.handle.RequestHeaders().Set("x-user-id", buf.ToUnsafeString())
+    f.handle.RequestHeaders().Set("x-user-id", key.ToUnsafeString())
     return shared.HeadersStatusContinue
 }
 ```
+
+### Flamegraphs
+
+Before (upstream SDK) -- `getSingleHeader` at 98.90%:
+
+![baseline flamegraph](bench/profiles/allocs_header_auth_500k.svg)
+
+After (luwes + GetOneInto) -- `getSingleHeader` gone:
+
+![after getoneinto flamegraph](bench/profiles/allocs_header-auth-getoneinto.svg)
 
 ### Alloc benchmark summary
 

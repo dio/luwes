@@ -48,15 +48,15 @@ func (f *Factory) Create(handle shared.HttpFilterHandle) shared.HttpFilter {
 
 func (f *Factory) OnDestroy() {}
 
-// OnRequestHeaders is the hot path. GetOne, no Get, no GetAll.
+// OnRequestHeaders is the hot path. GetOneInto: zero allocs, caller-owned buffer.
 func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
-	key := headers.GetOne("x-api-key")
-	if key.Ptr == nil || key.Len == 0 {
+	var key shared.UnsafeEnvoyBuffer
+	if !headers.GetOneInto("x-api-key", &key) {
 		f.handle.SendLocalResponse(401, nil, []byte(`{"error":"missing x-api-key"}`), "auth")
 		return shared.HeadersStatusStop
 	}
-	// Inject user identity header using the unsafe string -- valid for the
-	// duration of this callback since we call SetRequestHeader immediately.
+	// Inject user identity header. key points into Envoy-owned memory -- valid
+	// for this callback. ToUnsafeString() produces a string header without copying.
 	f.handle.RequestHeaders().Set("x-user-id", key.ToUnsafeString())
 	return shared.HeadersStatusContinue
 }
