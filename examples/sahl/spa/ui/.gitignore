@@ -1,6 +1,3 @@
-# dist/ is committed so //go:embed works without a build step.
-!dist/
-
 # Logs
 logs
 *.log
