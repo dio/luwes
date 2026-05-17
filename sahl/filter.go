@@ -53,9 +53,7 @@ func (f *configFactory) Create(
 	}
 
 	if def.handler == nil {
-		err := fmt.Errorf("sahl: filter %q has nil handler", f.name)
-		h.Log(shared.LogLevelError, "%v", err)
-		return nil, err
+		panic(fmt.Sprintf("BUG: sahl: filter %q registered with nil handler", f.name))
 	}
 
 	return &filterFactory{name: f.name, def: def}, nil

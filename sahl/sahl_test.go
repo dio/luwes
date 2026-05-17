@@ -355,6 +355,9 @@ func TestRegisterFactory_FactoryError(t *testing.T) {
 }
 
 func TestRegisterFactory_NilHandler(t *testing.T) {
+	// factoryFn returns (nil, nil): user-supplied factory returned a nil handler
+	// without an error. This is a user error, not a BUG, so it returns an error
+	// to Envoy rather than panicking. Distinct from filterDef.handler==nil (BUG panic).
 	sahl.RegisterFactory("test-factory-nil-handler",
 		func(h sahl.ConfigHandle) (sahl.HandlerFunc, error) {
 			return nil, nil // no error but nil handler

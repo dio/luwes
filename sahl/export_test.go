@@ -11,6 +11,8 @@ package sahl
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/dio/luwes/shared"
 	"github.com/dio/luwes/shared/fake"
 )
@@ -68,18 +70,15 @@ func TestNewWriterForTesting_Functional(t *testing.T) {
 	}
 }
 
-// TestConfigFactory_NilHandler_ReturnsError covers the def.handler == nil guard in
-// configFactory.Create. This fires when Factory(nil) is called : a misconfigured
-// filter that has no handler must fail loudly at config load time, not at request time.
-func TestConfigFactory_NilHandler_ReturnsError(t *testing.T) {
+// TestConfigFactory_NilHandler_Panics covers the def.handler == nil guard in
+// configFactory.Create. A nil handler is a programmer error (nil passed to
+// Factory or Register*) caught at config-load time as a BUG panic rather than
+// a recoverable error, so it never silently reaches request handling.
+func TestConfigFactory_NilHandler_Panics(t *testing.T) {
 	cf := newConfigFactory("bad-filter", &filterDef{handler: nil})
-	_, err := cf.Create(&fakeConfigHandleForExport{}, nil)
-	if err == nil {
-		t.Fatal("expected error for nil handler, got nil")
-	}
-	if err.Error() == "" {
-		t.Fatal("error message must not be empty")
-	}
+	assert.Panics(t, func() {
+		_, _ = cf.Create(&fakeConfigHandleForExport{}, nil)
+	})
 }
 
 type fakeConfigHandleForExport struct{}
