@@ -3,9 +3,15 @@ name: abi-drift
 on:
   schedule:
     - cron: "0 6 * * 1" # weekly Monday 06:00 UTC
+  workflow_dispatch: # allow manual trigger
 
 # SHAs pinned to latest tags as of 2025-05-17:
-#   actions/checkout@v6.0.2  de0fac2e4500dabe0009e67214ff5f5447ce83dd
+#   actions/checkout@v6.0.2                     de0fac2e4500dabe0009e67214ff5f5447ce83dd
+#   peter-evans/create-pull-request@v8.1.1      5f6978faf089d4d20b00c7766989d076bb2fc7f1
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   check:
@@ -14,4 +20,45 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - run: make check-abi-drift
+      - name: resolve envoy/main HEAD
+        id: envoy
+        run: |
+          COMMIT=$(curl -fsSL \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/envoyproxy/envoy/commits/main" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "commit_short=${COMMIT:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: sync abi.h
+        run: ./scripts/sync-abi.sh ${{ steps.envoy.outputs.commit }}
+
+      - name: check for changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: open PR
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: abi-drift/envoy-${{ steps.envoy.outputs.commit_short }}
+          commit-message: "abi: sync abi.h to envoy@${{ steps.envoy.outputs.commit_short }}"
+          title: "abi: sync abi.h to envoy@${{ steps.envoy.outputs.commit_short }}"
+          body: |
+            Automated weekly ABI drift check found changes in `abi/abi.h`
+            relative to `envoyproxy/envoy@main`.
+
+            Envoy commit: `${{ steps.envoy.outputs.commit }}`
+
+            Review the diff carefully:
+            - If only implementation details changed and `ENVOY_DYNAMIC_MODULES_ABI_VERSION`
+              is unchanged, this is a safe update.
+            - If `ABI_VERSION` changed, bump the luwes minor version in `go.mod`
+              and tag a new release before merging.
+          labels: abi,automated
+          delete-branch: true
