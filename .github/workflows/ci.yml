@@ -185,6 +185,8 @@ jobs:
         run: make download-envoy
 
       - name: build header-auth .so
-        run: make build-linux-amd64 EXAMPLE=header-auth
+        run: |
+          make build-linux-amd64 EXAMPLE=header-auth
+          cp dist/libheader-auth.linux-amd64.so dist/libheader-auth.so
 
       - run: make e2e
