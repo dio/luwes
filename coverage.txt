@@ -1,0 +1,13 @@
+ok  	github.com/dio/luwes	(cached)	coverage: 26.0% of statements
+ok  	github.com/dio/luwes/buffer	(cached)	coverage: 100.0% of statements
+ok  	github.com/dio/luwes/examples/header-auth	(cached)	coverage: 66.7% of statements
+ok  	github.com/dio/luwes/examples/hello	(cached)	coverage: 100.0% of statements
+	github.com/dio/luwes/examples/observability		coverage: 0.0% of statements
+ok  	github.com/dio/luwes/examples/sahl/decoder	2.558s	coverage: 49.1% of statements
+ok  	github.com/dio/luwes/examples/sahl/header-auth	(cached)	coverage: 100.0% of statements
+ok  	github.com/dio/luwes/examples/sahl/spa	(cached)	coverage: 97.1% of statements
+ok  	github.com/dio/luwes/examples/sahl/sse-tap	(cached)	coverage: 50.7% of statements
+ok  	github.com/dio/luwes/sahl	(cached)	coverage: 38.7% of statements
+	github.com/dio/luwes/shared		coverage: 0.0% of statements
+ok  	github.com/dio/luwes/shared/fake	1.670s	coverage: 33.3% of statements
+ok  	github.com/dio/luwes/shared/utility	(cached)	coverage: 69.2% of statements

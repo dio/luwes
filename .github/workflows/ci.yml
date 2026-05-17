@@ -104,43 +104,7 @@ jobs:
           go test -race -coverprofile=coverage.out -covermode=atomic $PKGS 2>&1 | tee coverage.txt
 
       - name: coverage floor
-        run: |
-          python3 - <<'EOF'
-          import sys, re
-
-          FLOORS = {
-              "github.com/dio/luwes":                              20,
-              "github.com/dio/luwes/examples/header-auth":         60,
-              "github.com/dio/luwes/examples/hello":               90,
-              "github.com/dio/luwes/examples/sahl/decoder":        45,
-              "github.com/dio/luwes/examples/sahl/header-auth":    90,
-              "github.com/dio/luwes/examples/sahl/spa":            90,
-              "github.com/dio/luwes/examples/sahl/sse-tap":        45,
-              "github.com/dio/luwes/shared/fake":                  30,
-              "github.com/dio/luwes/shared/utility":               60,
-          }
-
-          coverage = {}
-          with open("coverage.txt") as f:
-              for line in f:
-                  m = re.match(r"ok\s+(\S+)\s+\S+\s+coverage:\s+([\d.]+)%", line)
-                  if m:
-                      coverage[m.group(1)] = float(m.group(2))
-
-          failures = []
-          for pkg, floor in FLOORS.items():
-              pct = coverage.get(pkg)
-              if pct is None:
-                  failures.append(f"MISSING: {pkg} not in coverage output")
-              elif pct < floor:
-                  failures.append(f"LOW: {pkg} = {pct:.1f}% (floor {floor}%)")
-
-          if failures:
-              for f in failures:
-                  print(f)
-              sys.exit(1)
-          print("coverage check passed")
-          EOF
+        run: python3 scripts/coverage-floor.py
 
       - name: upload to coveralls
         uses: coverallsapp/github-action@5cbfd81b66ca5d10c19b062c04de0199c215fb6e # v2.3.7
@@ -163,39 +127,7 @@ jobs:
       - run: make bench
 
       - name: alloc regression gate
-        run: |
-          python3 - <<'EOF'
-          import sys, re
-
-          CEILINGS = {
-              "BenchmarkHeaderAuthAccept": 1,  # fake: key escapes due to interface call; real CGO: 0
-              "BenchmarkGetOne":           0,
-              "BenchmarkGetOneInto":       0,
-              "BenchmarkGetMiss":          0,
-              "BenchmarkGetChunks":        0,
-              "BenchmarkHeaderAuthReject": 2,
-              "BenchmarkGet":              2,
-              "BenchmarkGetAll":           2,
-              "BenchmarkFilterCreate":     2,
-          }
-
-          failures = []
-          with open("bench/results.txt") as f:
-              for line in f:
-                  m = re.match(r"(Benchmark\w+)-\d+\s+\d+\s+[\d.]+\s+\S+\s+[\d.]+\s+B/op\s+(\d+)\s+allocs/op", line)
-                  if not m:
-                      continue
-                  name, allocs = m.group(1), int(m.group(2))
-                  if name in CEILINGS and allocs > CEILINGS[name]:
-                      failures.append(f"REGRESSION: {name} got {allocs} allocs/op, ceiling is {CEILINGS[name]}")
-
-          if failures:
-              for f in failures:
-                  print(f)
-              sys.exit(1)
-          else:
-              print("alloc check passed")
-          EOF
+        run: python3 scripts/bench-check.py
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

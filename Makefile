@@ -192,12 +192,15 @@ lint:
 
 .PHONY: coverage
 coverage:
-	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+	PKGS=$$(go list ./... | grep -v -E 'abi_impl|shared/mocks|/cmd$$|/bench$$|/abi$$|node_modules'); \
+	go test -race -coverprofile=coverage.out -covermode=atomic $$PKGS 2>&1 | tee coverage.txt
 	go tool cover -func=coverage.out
+	python3 scripts/coverage-floor.py
 
 .PHONY: bench
 bench:
 	go test -bench=. -benchmem -count=5 ./bench/ | tee bench/results.txt
+	python3 scripts/bench-check.py
 bench-profile:
 	go test -bench=. -benchmem -memprofile=bench/mem.out ./bench/
 	go tool pprof -alloc_objects -http=:8080 bench/mem.out
