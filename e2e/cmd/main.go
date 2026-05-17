@@ -8,8 +8,8 @@ import (
 	"github.com/dio/luwes/sahl"
 
 	headerauth "github.com/dio/luwes/examples/header-auth"
+	_ "github.com/dio/luwes/examples/sahl/auth" // registers via init()
 	headerauthsahl "github.com/dio/luwes/examples/sahl/header-auth"
-	_ "github.com/dio/luwes/examples/sahl/auth"    // registers via init()
 	_ "github.com/dio/luwes/examples/sahl/sse-tap" // registers via init()
 )
 
