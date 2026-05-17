@@ -122,12 +122,3 @@ examples/sahl/decoder/
   envoy.yaml         Envoy config with cluster_header route + provider clusters
   README.md          this file
 ```
-
-## Comparison with jisr decoder
-
-| Aspect | jisr | sahl |
-|--------|------|------|
-| Body reading | `io.ReadAll(r.Body)` via goroutine + pipe | `r.Body()` returns `[]byte` directly |
-| Response tap | goroutine reads `r.Body` via `io.Reader` | `ResponseHandlerFunc` per chunk, no goroutine |
-| Per-request state | closure captured per goroutine | `chunk.Context *any` |
-| Allocs (request) | 20+ (goroutine, pipe, headers copy) | ~4 |

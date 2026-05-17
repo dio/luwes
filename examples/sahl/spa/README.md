@@ -111,13 +111,3 @@ examples/sahl/spa/
   envoy.yaml       Envoy config: api-backend → spa → router → direct_response
   README.md        This file
 ```
-
-## Comparison with jisr spa
-
-| Aspect | jisr | sahl |
-|--------|------|------|
-| Handler signature | `func(ctx context.Context, w ResponseWriter, r *Request)` | `func(w *Writer, r *Request)` |
-| Path access | `r.Header.Get(":path")` | `r.Path` (pre-copied) |
-| Response headers | `w.SetResponseHeader(k, v)` then `w.SendBytes` | same API |
-| Middleware | `jisr.Chain` | `sahl.Chain` |
-| Allocs (spa handler) | similar | similar: no body read, no pool overhead |
