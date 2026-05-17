@@ -42,6 +42,9 @@ $(ENVOY_BIN):
 	@chmod +x .bin/envoy
 	@echo "Envoy ready: $@"
 
+.PHONY: download-envoy
+download-envoy: $(ENVOY_BIN)
+
 # Build for host (dev/test)
 .PHONY: build
 build:

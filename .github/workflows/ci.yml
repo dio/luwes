@@ -182,7 +182,7 @@ jobs:
 
       - name: download envoy
         if: steps.cache-envoy.outputs.cache-hit != 'true'
-        run: make .bin/envoy
+        run: make download-envoy
 
       - name: build header-auth .so
         run: make build-linux-amd64 EXAMPLE=header-auth
