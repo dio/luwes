@@ -21,11 +21,20 @@ func NewWriterForTest(handle shared.HttpFilterHandle, scheduler shared.Scheduler
 	return w
 }
 
-// NewFilterForTest constructs a sahlFilter for use in tests.
+// NewFilterForTest constructs a sahlFilter for use in tests, bypassing the pool.
 func NewFilterForTest(name string, handler HandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
 	return &sahlFilter{
 		name:    name,
-		handler: handler,
+		handler: &filterDef{handler: handler},
+		handle:  handle,
+	}
+}
+
+// NewFilterWithResponseForTest constructs a sahlFilter with a response observer for tests.
+func NewFilterWithResponseForTest(name string, handler HandlerFunc, resp ResponseHandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
+	return &sahlFilter{
+		name:    name,
+		handler: &filterDef{handler: handler, responseFn: resp},
 		handle:  handle,
 	}
 }

@@ -24,7 +24,11 @@ func (f *configFactory) Create(
 ) (shared.HttpFilterFactory, error) {
 	ch := &configHandleImpl{h: h, raw: raw}
 
-	handler := f.def.handler
+	// Resolve the handler: factory path produces a new HandlerFunc per config instance.
+	def := &filterDef{
+		handler:    f.def.handler,
+		responseFn: f.def.responseFn,
+	}
 
 	switch {
 	case f.def.factoryFn != nil:
@@ -38,7 +42,7 @@ func (f *configFactory) Create(
 			h.Log(shared.LogLevelError, "%v", err)
 			return nil, err
 		}
-		handler = fn
+		def.handler = fn
 
 	case f.def.configFn != nil:
 		if err := f.def.configFn(ch); err != nil {
@@ -47,13 +51,13 @@ func (f *configFactory) Create(
 		}
 	}
 
-	if handler == nil {
+	if def.handler == nil {
 		err := fmt.Errorf("sahl: filter %q has nil handler", f.name)
 		h.Log(shared.LogLevelError, "%v", err)
 		return nil, err
 	}
 
-	return &filterFactory{name: f.name, handler: handler}, nil
+	return &filterFactory{name: f.name, def: def}, nil
 }
 
 func (f *configFactory) CreatePerRoute(_ []byte) (any, error) { return nil, nil }
@@ -61,27 +65,31 @@ func (f *configFactory) CreatePerRoute(_ []byte) (any, error) { return nil, nil 
 // -- filterFactory: shared.HttpFilterFactory --
 
 type filterFactory struct {
-	name    string
-	handler HandlerFunc
+	name string
+	def  *filterDef
 }
 
 func (f *filterFactory) Create(handle shared.HttpFilterHandle) shared.HttpFilter {
-	return newSahlFilter(f.name, f.handler, handle)
+	return newSahlFilter(f.name, f.def, handle)
 }
 
 func (f *filterFactory) OnDestroy() {}
 
 // -- sahlFilter: shared.HttpFilter --
 
+// sahlFilter is per-request state.
 type sahlFilter struct {
 	shared.EmptyHttpFilter
 
 	name    string
-	handler HandlerFunc
+	handler *filterDef
 	handle  shared.HttpFilterHandle
 
 	req    *Request
 	writer *Writer
+
+	// respState holds per-response state for response observation.
+	respState responseState
 
 	// body buffering state for r.Body()
 	bodyDone bool
@@ -89,13 +97,13 @@ type sahlFilter struct {
 
 var filterPool = sync.Pool{New: func() any { return &sahlFilter{} }}
 
-func newSahlFilter(name string, handler HandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
+func newSahlFilter(name string, def *filterDef, handle shared.HttpFilterHandle) *sahlFilter {
 	f := filterPool.Get().(*sahlFilter)
 	if f.handler != nil {
 		panic("BUG: sahl: filter pool corruption: handler still set at reuse")
 	}
 	f.name = name
-	f.handler = handler
+	f.handler = def
 	f.handle = handle
 	f.bodyDone = false
 	return f
@@ -123,8 +131,8 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 	w := getWriter(f.handle, scheduler)
 	f.writer = w
 
-	// Run the handler synchronously on the worker thread.
-	f.handler(w, req)
+	// Run the request handler synchronously on the worker thread.
+	f.handler.handler(w, req)
 
 	if w.goStarted {
 		// Handler called w.Go(): goroutine is running, worker thread released.
@@ -149,6 +157,20 @@ func (f *sahlFilter) OnRequestBody(body shared.BodyBuffer, endStream bool) share
 	return shared.BodyStatusStopAndBuffer
 }
 
+func (f *sahlFilter) OnResponseHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
+	if f.handler.responseFn != nil {
+		f.onResponseHeaders(headers)
+	}
+	return shared.HeadersStatusContinue
+}
+
+func (f *sahlFilter) OnResponseBody(body shared.BodyBuffer, endStream bool) shared.BodyStatus {
+	if f.handler.responseFn != nil {
+		f.onResponseBody(body, endStream)
+	}
+	return shared.BodyStatusContinue
+}
+
 func (f *sahlFilter) OnStreamComplete() {
 	// Cancel Go() goroutine context if one is running.
 	if f.writer != nil && f.writer.goCancel != nil {
@@ -165,6 +187,7 @@ func (f *sahlFilter) OnDestroy() {
 		putWriter(f.writer)
 		f.writer = nil
 	}
+	f.respState.reset()
 	f.handler = nil // zero before pool return so assertion catches leaks
 	filterPool.Put(f)
 }

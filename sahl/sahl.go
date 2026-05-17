@@ -98,9 +98,10 @@ var (
 )
 
 type filterDef struct {
-	configFn  ConfigFunc
-	factoryFn HandlerFactory
-	handler   HandlerFunc
+	configFn   ConfigFunc
+	factoryFn  HandlerFactory
+	handler    HandlerFunc
+	responseFn ResponseHandlerFunc
 }
 
 // Register registers a synchronous filter handler by name.
@@ -114,6 +115,23 @@ func Register(name string, h HandlerFunc) {
 // Both share package-level state. For per-config isolation use [RegisterFactory].
 func RegisterWithConfig(name string, configFn ConfigFunc, h HandlerFunc) {
 	mustAdd(name, &filterDef{configFn: configFn, handler: h})
+}
+
+// RegisterWithResponse registers a filter with both a request handler and a
+// response observer. The response handler is called on each response body chunk
+// (observe mode: zero added latency, body always forwarded downstream).
+// Use it for SSE tapping, token counting, response header inspection.
+//
+// The response handler is also called once on response headers (Data=nil,
+// EndStream=false) to allow Content-Type-gated setup.
+func RegisterWithResponse(name string, h HandlerFunc, resp ResponseHandlerFunc) {
+	mustAdd(name, &filterDef{handler: h, responseFn: resp})
+}
+
+// RegisterWithConfigAndResponse is like [RegisterWithConfig] but also registers
+// a response observer.
+func RegisterWithConfigAndResponse(name string, configFn ConfigFunc, h HandlerFunc, resp ResponseHandlerFunc) {
+	mustAdd(name, &filterDef{configFn: configFn, handler: h, responseFn: resp})
 }
 
 // RegisterFactory registers a filter using a factory function that returns a
