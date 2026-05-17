@@ -14,3 +14,9 @@ bench.test
 # spa example
 examples/sahl/spa/ui/node_modules/
 examples/sahl/spa/ui/.vite/
+
+# spa example build outputs
+examples/sahl/spa/libspa.so
+examples/sahl/spa/libspa.h
+examples/sahl/spa/libspa.linux-amd64.so
+examples/sahl/spa/libspa.linux-arm64.so

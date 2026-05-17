@@ -31,11 +31,31 @@ Both filters share the same embedded filesystem (`//go:embed ui/dist`).
 ## Build
 
 ```sh
-make build EXAMPLE=sahl/spa
-# or directly:
-CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-  -o dist/libspa.so ./examples/sahl/spa/cmd
+make -C examples/sahl/spa build        # local .so (host arch)
+make -C examples/sahl/spa build-linux  # cross-compile amd64 + arm64 via zig
 ```
+
+Or from inside the spa directory:
+
+```sh
+make build
+```
+
+## Docker
+
+```sh
+# Cross-compile + build multi-arch image (loads to local Docker daemon)
+make -C examples/sahl/spa docker
+
+# Push to a registry
+make -C examples/sahl/spa docker-push IMAGE_TAG=ghcr.io/you/spa:latest
+
+# Run and smoke test
+make -C examples/sahl/spa smoke
+```
+
+The Dockerfile uses `envoyproxy/envoy:distroless-v1.38.0` — no shell,
+no package manager. The `.so` is copied to `/etc/envoy/libspa.so`.
 
 ## Run
 
