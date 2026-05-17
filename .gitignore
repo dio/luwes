@@ -7,3 +7,6 @@ bench/profiles/*.out
 go.work.sum
 coverage.out
 e2e/*.so
+bench/bench.test
+bench/*.prof
+bench.test
