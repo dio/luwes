@@ -1,7 +1,7 @@
 # luwes
 
 [![ci](https://github.com/dio/luwes/actions/workflows/ci.yml/badge.svg)](https://github.com/dio/luwes/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/dio/luwes/badge.svg?branch=main)](https://coveralls.io/github/dio/luwes?branch=main)
+[![Coverage Status](https://coveralls.io/repos/github/dio/luwes/badge.svg)](https://coveralls.io/github/dio/luwes)
 
 Zero-allocation Go SDK for Envoy dynamic modules. Drop-in replacement for
 `github.com/envoyproxy/envoy/source/extensions/dynamic_modules/sdk/go`.
