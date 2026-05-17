@@ -159,14 +159,15 @@ directly into Envoy's header table.
 | Benchmark | upstream SDK | luwes |
 |-----------|-------------|-------|
 | HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
-| GetOne (hit) | 1 alloc/op | 1 alloc/op |
 | GetOneInto (hit) | API does not exist | **0 allocs/op** |
 | GetAll (10 headers) | 2 allocs/op | 1 alloc/op |
 
-`GetOne` allocates on the real CGO path in both SDKs: `&valueView` escapes to the
-heap at the CGO boundary regardless. `GetOneInto` eliminates it by letting the caller
-own the buffer. The fake benchmark shows 0 for `GetOne` in luwes because there is no
-CGO boundary on the fake path; the flamegraph is the ground truth.
+`GetOne` still allocates 1 on the real CGO path in both SDKs: `&valueView` escapes
+to the heap at the CGO boundary regardless. The second flamegraph is clean because
+header-auth was updated to call `GetOneInto` instead of `GetOne`. That is the
+migration: replace `GetOne` with `GetOneInto` and declare a caller-owned buffer.
+`HeaderAuthAccept` at 0 allocs/op is the result of both the handle pool (Phase 2)
+and `GetOneInto` (Phase 5) together.
 
 ## ABI
 
