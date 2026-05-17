@@ -1,4 +1,4 @@
-// Package auth demonstrates [sahl.RegisterFactory] -- the pattern for filters
+// Package auth demonstrates [sahl.RegisterFactory]: the pattern for filters
 // that need per-listener isolated state: parsed config and metric IDs.
 //
 // See [sahl package doc] for the full factory design: the three Envoy lifetimes
@@ -126,7 +126,7 @@ func init() {
 
 // loggingMiddleware logs each request with its method, path, and filter name.
 // It takes cfg so it can include the namespace in the log, but it is otherwise
-// stateless -- there is no per-request allocation from this middleware.
+// stateless: there is no per-request allocation from this middleware.
 func loggingMiddleware(cfg *Config) sahl.Middleware {
 	return func(next sahl.HandlerFunc) sahl.HandlerFunc {
 		return func(w *sahl.Writer, r *sahl.Request) {

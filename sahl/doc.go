@@ -43,23 +43,23 @@
 //
 // Envoy's dynamic module API has three distinct creation points:
 //
-//  1. program init          -- once per process (global registry)
-//  2. filter config create  -- once per Envoy listener / filter chain
-//  3. filter instance create -- once per HTTP request
+//  1. program init: once per process (global registry)
+//  2. filter config create: once per Envoy listener / filter chain
+//  3. filter instance create: once per HTTP request
 //
 // sahl has a type for each:
 //
-//	configFactory   -- created once per registered name; Envoy calls its
+//	configFactory: created once per registered name; Envoy calls its
 //	                   Create method once per filter_chain that references
 //	                   this filter. Produces a filterFactory.
-//	filterFactory   -- one per listener. Holds the resolved HandlerFunc for
+//	filterFactory: one per listener, holds the resolved HandlerFunc for
 //	                   that listener. Produces sahlFilters.
-//	sahlFilter      -- one per request. Pool-allocated. Zero-alloced on warm
+//	sahlFilter: one per request. Pool-allocated. Zero-alloced on warm
 //	                   pool hit.
 //
 // ## Registration function comparison
 //
-// Quick reference -- pick the row that matches your filter:
+// Quick reference: pick the row that matches your filter.
 //
 //	Registration function          Per-listener  Metrics  Body  Response  Multi-listener safe
 //	------------------------------ ------------- -------- ----- --------- -------------------
@@ -82,7 +82,7 @@
 // Both patterns define a counter and parse config. The difference is where
 // that state lives and what happens when Envoy creates a second listener.
 //
-// RegisterWithConfig -- state in package vars, second listener overwrites first:
+// RegisterWithConfig: state in package vars, second listener overwrites first.
 //
 //	// package-level: shared by ALL listeners using this filter
 //	var (
@@ -110,7 +110,7 @@
 //	    )
 //	}
 //
-// RegisterFactory -- state in closure, each listener gets its own copy:
+// RegisterFactory: state in closure, each listener gets its own copy.
 //
 //	func init() {
 //	    sahl.RegisterFactory("auth",
@@ -182,14 +182,14 @@
 // ## The metric ID constraint
 //
 // Metric IDs must be defined at filter config time, not per-request.
-// ConfigHandle is only available in configFn or the factory function --
+// ConfigHandle is only available in configFn or the factory function:
 // you cannot call DefineCounter from a HandlerFunc. Envoy allocates the
 // metric slot once; calling DefineCounter per-request would re-define it
 // on every request (undefined behavior, likely panic or silent leak).
 //
-// With RegisterWithConfig, metric IDs live in package vars -- correct for
-// single-listener deployments. With RegisterFactory, they are captured in
-// the closure -- each listener gets its own MetricID value and its own
+// With RegisterWithConfig, metric IDs live in package vars (correct for
+// single-listener deployments). With RegisterFactory, they are captured in
+// the closure: each listener gets its own MetricID value and its own
 // Envoy stat slot.
 //
 // ## The configHandleImpl wrapping subtlety
