@@ -10,19 +10,19 @@ EXAMPLE     ?= header-auth
 EXAMPLE_CMD := ./examples/$(EXAMPLE)/cmd
 ENVOY_YAML  ?= $(CURDIR)/examples/$(EXAMPLE)/envoy.yaml
 
-# Detect host OS and architecture
-_OS   := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+GOOS  := $(shell go env GOOS)
+GOARCH := $(shell go env GOARCH)
+
+# Detect host architecture for Zig (uses aarch64/x86_64 naming, not amd64/arm64)
 _ARCH := $(shell uname -m | sed 's/arm64/aarch64/')
 
-# Zig download URL
-ZIG_OS  := $(if $(filter darwin,$(_OS)),macos,$(_OS))
+# Zig download URL (uses macos not darwin, and aarch64/x86_64 arch names)
+ZIG_OS  := $(if $(filter darwin,$(GOOS)),macos,$(GOOS))
 ZIG_URL := https://ziglang.org/download/$(ZIG_VERSION)/zig-$(_ARCH)-$(ZIG_OS)-$(ZIG_VERSION).tar.xz
 
 # Envoy download URL (archive.tetratelabs.io)
 # Supports: darwin-arm64, darwin-amd64, linux-amd64, linux-arm64
-ENVOY_ARCHIVE_OS   := $(if $(filter darwin,$(_OS)),darwin,linux)
-ENVOY_ARCHIVE_ARCH := $(shell go env GOARCH)
-ENVOY_URL := https://archive.tetratelabs.io/envoy/download/v$(ENVOY_VERSION)/envoy-v$(ENVOY_VERSION)-$(ENVOY_ARCHIVE_OS)-$(ENVOY_ARCHIVE_ARCH).tar.xz
+ENVOY_URL := https://archive.tetratelabs.io/envoy/download/v$(ENVOY_VERSION)/envoy-v$(ENVOY_VERSION)-$(GOOS)-$(GOARCH).tar.xz
 
 .PHONY: all
 all: build
@@ -37,7 +37,7 @@ $(ZIG_BIN):
 # Download envoy on demand
 $(ENVOY_BIN):
 	@mkdir -p .bin
-	@echo "Downloading Envoy $(ENVOY_VERSION) for $(ENVOY_ARCHIVE_OS)-$(ENVOY_ARCHIVE_ARCH)..."
+	@echo "Downloading Envoy $(ENVOY_VERSION) for $(GOOS)-$(GOARCH)..."
 	@curl -fsSL "$(ENVOY_URL)" | tar -xJ --strip-components=2 -C .bin
 	@chmod +x .bin/envoy
 	@echo "Envoy ready: $@"
