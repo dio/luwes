@@ -6,8 +6,13 @@ import (
 	"testing"
 
 	"github.com/dio/luwes/buffer"
+	"github.com/dio/luwes/sahl"
 	ssetap "github.com/dio/luwes/sahl/examples/sse-tap"
+	sahltest "github.com/dio/luwes/sahl/testutil"
+	"github.com/dio/luwes/shared"
+	"github.com/dio/luwes/shared/fake"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // feedStream feeds chunks into a HeadTail ring and returns extracted usage.
@@ -96,7 +101,7 @@ func TestExtractUsage_ChunkedDelivery(t *testing.T) {
 }
 
 func TestExtractUsage_NonSSE_ReturnsZero(t *testing.T) {
-	// Plain JSON — no SSE prefix, extraction returns zero.
+	// Plain JSON: no SSE prefix, extraction returns zero.
 	body := `{"choices":[{"message":{"content":"Hi"}}],"usage":{"prompt_tokens":5,"completion_tokens":3}}`
 	u := feedStream([]string{body})
 	assert.Equal(t, uint32(0), u.Input)
@@ -109,15 +114,102 @@ func TestExtractUsage_EmptyStream(t *testing.T) {
 	assert.Equal(t, uint32(0), u.Output)
 }
 
+// -- tapResponse integration tests --
+// Exercise the full response observer path: ringState lifecycle, skip flag,
+// multi-chunk accumulation, counter emission, and no-token early return.
+
+func makeTapFilter(fh *fake.FakeFilterHandle) *sahltest.Filter {
+	return sahltest.NewFilterWithResponse(
+		ssetap.ExtensionName,
+		func(w *sahl.Writer, r *sahl.Request) {},
+		ssetap.TapResponseForTest,
+		fh,
+	)
+}
+
+func TestTapResponse_SSE_ExtractsTokens(t *testing.T) {
+	sseBody := "event: message_start\ndata: {\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n" +
+		"event: message_delta\ndata: {\"usage\":{\"output_tokens\":6}}\n\n"
+
+	fh := fake.NewFilterHandle(
+		fake.WithResponseHeaders(map[string]string{
+			":status":      "200",
+			"content-type": "text/event-stream",
+		}),
+		fake.WithResponseBody([]byte(sseBody)),
+	)
+
+	f := makeTapFilter(fh)
+	f.OnRequestHeaders(fh.RequestHeaders(), false)
+	f.OnResponseHeaders(fh.ResponseHeaders(), false)
+	f.OnResponseBody(fh.BufferedResponseBody(), true)
+	f.OnStreamComplete()
+
+	require.Len(t, fh.CounterIncrements, 2)
+	var totalN uint64
+	for _, ci := range fh.CounterIncrements {
+		totalN += ci.N
+	}
+	assert.Equal(t, uint64(12+6), totalN)
+}
+
+func TestTapResponse_NonSSE_Skipped(t *testing.T) {
+	fh := fake.NewFilterHandle(
+		fake.WithResponseHeaders(map[string]string{
+			":status":      "200",
+			"content-type": "application/json",
+		}),
+		fake.WithResponseBody([]byte(`{"result":"ok"}`)),
+	)
+
+	f := makeTapFilter(fh)
+	f.OnRequestHeaders(fh.RequestHeaders(), false)
+	f.OnResponseHeaders(fh.ResponseHeaders(), false)
+	f.OnResponseBody(fh.BufferedResponseBody(), true)
+	f.OnStreamComplete()
+
+	assert.Empty(t, fh.CounterIncrements)
+}
+
+func TestTapResponse_MultiChunk(t *testing.T) {
+	fh := fake.NewFilterHandle(
+		fake.WithResponseHeaders(map[string]string{
+			":status":      "200",
+			"content-type": "text/event-stream",
+		}),
+	)
+
+	f := makeTapFilter(fh)
+	f.OnRequestHeaders(fh.RequestHeaders(), false)
+	f.OnResponseHeaders(fh.ResponseHeaders(), false)
+	chunk1 := "event: message_start\ndata: {\"message\":{\"usage\":{\"input_tokens\":3}}}\n\n"
+	chunk2 := "event: message_delta\ndata: {\"usage\":{\"output_tokens\":7}}\n\n"
+	f.OnResponseBody(fake.NewFakeBodyBuffer([]byte(chunk1)), false)
+	f.OnResponseBody(fake.NewFakeBodyBuffer([]byte(chunk2)), true)
+	f.OnStreamComplete()
+
+	require.Len(t, fh.CounterIncrements, 2)
+}
+
+func TestTapResponse_NoTokensNoCounters(t *testing.T) {
+	fh := fake.NewFilterHandle(
+		fake.WithResponseHeaders(map[string]string{
+			":status":      "200",
+			"content-type": "text/event-stream",
+		}),
+		fake.WithResponseBody([]byte("data: {\"delta\":\"hi\"}\n\n")),
+	)
+
+	f := makeTapFilter(fh)
+	f.OnRequestHeaders(fh.RequestHeaders(), false)
+	f.OnResponseHeaders(fh.ResponseHeaders(), false)
+	f.OnResponseBody(fh.BufferedResponseBody(), true)
+	f.OnStreamComplete()
+
+	assert.Empty(t, fh.CounterIncrements)
+}
+
 // BenchmarkExtractUsage measures scan cost on a realistic 64 KB tail buffer.
-//
-// Allocation budget (fake path, this bench):
-//   - ExtractUsage is pure computation: zero allocs for the scan itself.
-//   - feedStream allocates the HeadTail ring (2 heap allocs: head slab + Ring).
-//   - Benchmark setup not measured (b.ResetTimer() called after setup).
-//
-// Real CGO path: same zero allocs for the scan; ring is allocated once per
-// SSE response on the response-headers call, retained per-request in chunk.Context.
 func BenchmarkExtractUsage(b *testing.B) {
 	tail := []byte(strings.Repeat("data: {\"choices\":[{\"delta\":{\"text\":\"x\"}}]}\n\n", 1000) +
 		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":50}}\n\n" +
@@ -140,3 +232,6 @@ func ExampleExtractUsage() {
 	fmt.Printf("input=%d output=%d\n", u.Input, u.Output)
 	// Output: input=10 output=5
 }
+
+// unused imports needed via the sahltest package
+var _ = shared.LogLevelInfo

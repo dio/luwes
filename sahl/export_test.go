@@ -2,6 +2,11 @@ package sahl
 
 // Test helpers: exported only for use in sahl_test and example tests.
 // Not part of the public API.
+//
+// Cross-package test helpers (visible from any *_test.go in any package)
+// live in sahl/testing.go (NewFilterForTesting, SahlFilterForTesting) and
+// sahl/testutil (Filter wrapper). The helpers below are white-box only:
+// they access unexported types and are only compiled into the sahl test binary.
 
 import (
 	"github.com/dio/luwes/shared"
@@ -21,31 +26,22 @@ func NewWriterForTest(handle shared.HttpFilterHandle, scheduler shared.Scheduler
 	return w
 }
 
-// NewFilterForTest constructs a sahlFilter for use in tests, bypassing the pool.
+// NewFilterForTest constructs a sahlFilter for tests, bypassing the pool.
+// For cross-package use, prefer sahl/testutil.NewFilter instead.
 func NewFilterForTest(name string, handler HandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
-	return &sahlFilter{
-		name:    name,
-		handler: &filterDef{handler: handler},
-		handle:  handle,
-	}
+	return NewFilterForTesting(name, handler, nil, false, handle)
 }
 
-// NewFilterWithResponseForTest constructs a sahlFilter with a response observer for tests.
+// NewFilterWithResponseForTest constructs a sahlFilter with a response observer.
+// For cross-package use, prefer sahl/testutil.NewFilterWithResponse instead.
 func NewFilterWithResponseForTest(name string, handler HandlerFunc, resp ResponseHandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
-	return &sahlFilter{
-		name:    name,
-		handler: &filterDef{handler: handler, responseFn: resp},
-		handle:  handle,
-	}
+	return NewFilterForTesting(name, handler, resp, false, handle)
 }
 
-// NewBodyAwareFilterForTest constructs a sahlFilter with bodyAware=true for tests.
+// NewBodyAwareFilterForTest constructs a sahlFilter with bodyAware=true.
+// For cross-package use, prefer sahl/testutil.NewBodyAwareFilter instead.
 func NewBodyAwareFilterForTest(name string, handler HandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
-	return &sahlFilter{
-		name:    name,
-		handler: &filterDef{handler: handler, bodyAware: true},
-		handle:  handle,
-	}
+	return NewFilterForTesting(name, handler, nil, true, handle)
 }
 
 // Responded reports whether Send or SendBytes was called.
