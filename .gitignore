@@ -20,3 +20,4 @@ examples/sahl/spa/libspa.so
 examples/sahl/spa/libspa.h
 examples/sahl/spa/libspa.linux-amd64.so
 examples/sahl/spa/libspa.linux-arm64.so
+cmd

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	spa "github.com/dio/luwes/examples/sahl/spa"
 	"github.com/dio/luwes/sahl"
+	spa "github.com/dio/luwes/sahl/examples/spa"
 	"github.com/dio/luwes/shared"
 	"github.com/dio/luwes/shared/fake"
 	"github.com/stretchr/testify/assert"

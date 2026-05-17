@@ -163,20 +163,17 @@ test:
 	go test -race ./...
 
 # Run unit tests for all examples (pure Go, no Envoy required).
+# Covers both examples/ (raw SDK) and sahl/examples/ (sahl layer).
 .PHONY: examples/test
 examples/test:
-	go test -race $$(go list ./examples/... | grep -v node_modules)
+	go test -race $$(go list ./examples/... ./sahl/examples/... | grep -v node_modules)
 
-# Run unit tests for all sahl examples.
-.PHONY: examples/sahl/test
-examples/sahl/test:
-	go test -race $$(go list ./examples/sahl/... | grep -v node_modules)
-
-# Run unit tests for a specific example.
-# Usage: make examples/test/sahl/decoder
+# Run unit tests for a specific example (path relative to repo root).
+# Usage: make examples/test/examples/header-auth
+#        make examples/test/sahl/examples/auth
 .PHONY: examples/test/%
 examples/test/%:
-	go test -race -v $$(go list ./examples/$*/... | grep -v node_modules)
+	go test -race -v ./$*...
 
 .PHONY: format
 format:
@@ -245,5 +242,5 @@ tidy:
 # Builds dist/libspa.so, starts Envoy, runs 13 browser tests, tears down.
 .PHONY: spa-e2e
 spa-e2e: $(ENVOY_BIN)
-	ENVOY_BIN=$(ENVOY_BIN) bash examples/sahl/spa/e2e/run.sh
+	ENVOY_BIN=$(ENVOY_BIN) bash sahl/examples/spa/e2e/run.sh
 

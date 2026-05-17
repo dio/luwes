@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	headerauthsahl "github.com/dio/luwes/examples/sahl/header-auth"
 	"github.com/dio/luwes/sahl"
+	headerauthsahl "github.com/dio/luwes/sahl/examples/header-auth"
 	"github.com/dio/luwes/shared"
 	"github.com/dio/luwes/shared/fake"
 	"github.com/stretchr/testify/assert"

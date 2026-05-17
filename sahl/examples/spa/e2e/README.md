@@ -1,6 +1,6 @@
 # spa e2e
 
-Browser-based end-to-end tests for the `examples/sahl/spa` filter using
+Browser-based end-to-end tests for the `sahl/examples/spa` filter using
 [Lightpanda](https://lightpanda.io) (headless browser) + Playwright (CDP).
 
 ## What it tests
@@ -31,10 +31,10 @@ Browser-based end-to-end tests for the `examples/sahl/spa` filter using
 make spa-e2e
 
 # Or directly:
-bash examples/sahl/spa/e2e/run.sh
+bash sahl/examples/spa/e2e/run.sh
 
 # Skip the .so build (reuse existing dist/libspa.so):
-LUWES_SKIP_BUILD=1 bash examples/sahl/spa/e2e/run.sh
+LUWES_SKIP_BUILD=1 bash sahl/examples/spa/e2e/run.sh
 
 # Run tests against an already-running Envoy:
 SPA_URL=http://localhost:10000 node --test spa.test.mjs
@@ -43,7 +43,7 @@ SPA_URL=http://localhost:10000 node --test spa.test.mjs
 ## How it works
 
 `run.sh`:
-1. Builds `dist/libspa.so` from `examples/sahl/spa/cmd`
+1. Builds `dist/libspa.so` from `sahl/examples/spa/cmd`
 2. Runs `npm ci` to install Lightpanda + Playwright
 3. Starts Envoy with the spa filter loaded, waits for `/ready`
 4. Runs `node --test spa.test.mjs`
@@ -60,7 +60,7 @@ a time.
 ## File structure
 
 ```
-examples/sahl/spa/e2e/
+sahl/examples/spa/e2e/
   spa.test.mjs       13 browser tests (node:test + Playwright + Lightpanda)
   run.sh             build .so, start Envoy, run tests, tear down
   package.json       pinned: @lightpanda/browser 1.3.1, playwright-core 1.60.0

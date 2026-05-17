@@ -65,7 +65,7 @@ pre-copy convenience.
 make build EXAMPLE=header-auth-sahl
 # or directly:
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-  -o dist/libheader-auth-sahl.so ./examples/sahl/header-auth/cmd
+  -o dist/libheader-auth-sahl.so ./sahl/examples/header-auth/cmd
 ```
 
 ## Run
@@ -87,7 +87,7 @@ curl -si -H "x-api-key: my-token" http://localhost:10000/
 ## Filter structure
 
 ```
-examples/sahl/header-auth/
+sahl/examples/header-auth/
   header_auth_sahl.go   Handler function (no pool, no struct, no lifecycle hooks)
   cmd/main.go           Wiring: sdk.RegisterRaw with sahl.Factory
   envoy.yaml            Minimal Envoy config: listener + direct_response

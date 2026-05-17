@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/dio/luwes/examples/sahl/auth"
 	"github.com/dio/luwes/sahl"
+	"github.com/dio/luwes/sahl/examples/auth"
 	"github.com/dio/luwes/shared"
 	"github.com/dio/luwes/shared/fake"
 	"github.com/stretchr/testify/assert"

@@ -68,5 +68,5 @@ O(1) space, no allocation.
 
 ## Used by
 
-- `examples/sahl/sse-tap`: SSE token extraction
-- `examples/sahl/decoder`: SSE + JSON token tap with per-cluster routing
+- `sahl/examples/sse-tap`: SSE token extraction
+- `sahl/examples/decoder`: SSE + JSON token tap with per-cluster routing

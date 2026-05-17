@@ -218,7 +218,7 @@ func init() {
 }
 ```
 
-See `examples/sahl/auth` for a complete two-listener isolation example.
+See `sahl/examples/auth` for a complete two-listener isolation example.
 
 #### The metric ID constraint
 
@@ -317,7 +317,7 @@ Comparison:
 
 ## Example: header-auth-sahl
 
-`examples/sahl/header-auth` reimplements `examples/header-auth` using sahl.
+`sahl/examples/header-auth` reimplements `examples/header-auth` using sahl.
 Compare them:
 
 **Raw luwes (header-auth):**

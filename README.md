@@ -116,11 +116,11 @@ observation, and per-listener factory isolation.
 
 | Example | What it shows |
 |---|---|
-| [sahl/header-auth](examples/sahl/header-auth/) | Same auth filter as above, written with sahl |
-| [sahl/auth](examples/sahl/auth/) | `RegisterFactory`: per-listener config isolation, two listeners from one .so |
-| [sahl/decoder](examples/sahl/decoder/) | Body-aware routing: model name to upstream cluster, SSE token tap |
-| [sahl/sse-tap](examples/sahl/sse-tap/) | Response observer: tap SSE streams for token usage without buffering |
-| [sahl/spa](examples/sahl/spa/) | Embedded SPA (`//go:embed`) + JSON API handler, two filters in one .so |
+| [sahl/header-auth](sahl/examples/header-auth/) | Same auth filter as above, written with sahl |
+| [sahl/auth](sahl/examples/auth/) | `RegisterFactory`: per-listener config isolation, two listeners from one .so |
+| [sahl/decoder](sahl/examples/decoder/) | Body-aware routing: model name to upstream cluster, SSE token tap |
+| [sahl/sse-tap](sahl/examples/sse-tap/) | Response observer: tap SSE streams for token usage without buffering |
+| [sahl/spa](sahl/examples/spa/) | Embedded SPA (`//go:embed`) + JSON API handler, two filters in one .so |
 
 See [sahl/README.md](sahl/README.md) for the full API reference including the
 registration function comparison table and factory design. See

@@ -5,7 +5,7 @@ import (
 
 	"github.com/dio/luwes/sahl"
 
-	headerauthsahl "github.com/dio/luwes/examples/sahl/header-auth"
+	headerauthsahl "github.com/dio/luwes/sahl/examples/header-auth"
 )
 
 func main() {

@@ -54,7 +54,7 @@ output_tokens=%DYNAMIC_METADATA(sse_tap:output_tokens)%
 make build EXAMPLE=sse-tap
 # or directly:
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-  -o dist/libsse-tap.so ./examples/sahl/sse-tap/cmd
+  -o dist/libsse-tap.so ./sahl/examples/sse-tap/cmd
 ```
 
 ## Run
@@ -68,7 +68,7 @@ Or manually:
 ```sh
 GODEBUG=cgocheck=0 \
 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
-.bin/envoy -c examples/sahl/sse-tap/envoy.yaml --log-level warning
+.bin/envoy -c sahl/examples/sse-tap/envoy.yaml --log-level warning
 ```
 
 Point `llm_backend` in `envoy.yaml` at a real LLM backend or a mock SSE server.
@@ -164,7 +164,7 @@ artifact as sahl request benchmarks).
 ## Filter structure
 
 ```
-examples/sahl/sse-tap/
+sahl/examples/sse-tap/
   sse_tap.go         filter + ExtractUsage (pure Go, testable without Envoy)
   sse_tap_test.go    unit tests + BenchmarkExtractUsage
   cmd/main.go        wiring: register, abi_impl, sahl.Factories()

@@ -48,7 +48,7 @@ See `envoy.yaml` for a complete example pointing at real providers.
 make build EXAMPLE=sahl/decoder
 # or directly:
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-  -o dist/libdecoder.so ./examples/sahl/decoder/cmd
+  -o dist/libdecoder.so ./sahl/examples/decoder/cmd
 ```
 
 ## Run
@@ -109,13 +109,13 @@ All numbers are for the real CGO path (live Envoy).
 - `r.Body()`: returns the full buffered request body as `[]byte` (Go-owned)
 - `w.ClearRouteCache()`: re-evaluate `cluster_header` route after setting `x-cluster`
 - `w.SetMetadata()`: publish routing decisions for access logs and downstream filters
-- `buffer.HeadTail` for SSE token extraction (shared with `examples/sahl/sse-tap`)
+- `buffer.HeadTail` for SSE token extraction (shared with `sahl/examples/sse-tap`)
 - JSON body parsing in the response observer for non-streaming responses
 
 ## Filter structure
 
 ```
-examples/sahl/decoder/
+sahl/examples/decoder/
   decoder.go         filter: routing, SSE tap, JSON tap
   decoder_test.go    unit tests: resolveCluster, extractSSEUsage, filter wiring
   cmd/main.go        wiring: register, abi_impl, sahl.Factories()

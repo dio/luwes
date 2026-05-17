@@ -177,7 +177,7 @@
 //	    }, nil
 //	})
 //
-// See examples/sahl/auth for a complete per-listener isolation example.
+// See sahl/examples/auth for a complete per-listener isolation example.
 //
 // ## The metric ID constraint
 //

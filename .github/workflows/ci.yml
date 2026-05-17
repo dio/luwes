@@ -41,10 +41,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: examples/sahl/spa/ui/package-lock.json
+          cache-dependency-path: sahl/examples/spa/ui/package-lock.json
 
       - name: build spa ui
-        run: make -C examples/sahl/spa ui
+        run: make -C sahl/examples/spa ui
       - run: make format-check
       - run: make lint
 
@@ -65,10 +65,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: examples/sahl/spa/ui/package-lock.json
+          cache-dependency-path: sahl/examples/spa/ui/package-lock.json
 
       - name: build spa ui
-        run: make -C examples/sahl/spa ui
+        run: make -C sahl/examples/spa ui
       - run: make vet
       - run: make test
       - name: example unit tests
@@ -93,10 +93,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: examples/sahl/spa/ui/package-lock.json
+          cache-dependency-path: sahl/examples/spa/ui/package-lock.json
 
       - name: build spa ui
-        run: make -C examples/sahl/spa ui
+        run: make -C sahl/examples/spa ui
 
       - name: run coverage
         run: |
@@ -232,11 +232,11 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: |
-            examples/sahl/spa/ui/package-lock.json
-            examples/sahl/spa/e2e/package-lock.json
+            sahl/examples/spa/ui/package-lock.json
+            sahl/examples/spa/e2e/package-lock.json
 
       - name: build spa ui
-        run: make -C examples/sahl/spa ui
+        run: make -C sahl/examples/spa ui
 
       - name: cache zig
         id: cache-zig
@@ -267,10 +267,10 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/lightpanda-node
-          key: lightpanda-${{ hashFiles('examples/sahl/spa/e2e/package-lock.json') }}
+          key: lightpanda-${{ hashFiles('sahl/examples/spa/e2e/package-lock.json') }}
 
       - name: install e2e deps
-        run: npm ci --prefix examples/sahl/spa/e2e
+        run: npm ci --prefix sahl/examples/spa/e2e
 
       - run: make spa-e2e
 
@@ -293,10 +293,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: examples/sahl/spa/ui/package-lock.json
+          cache-dependency-path: sahl/examples/spa/ui/package-lock.json
 
       - name: build spa ui
-        run: make -C examples/sahl/spa ui
+        run: make -C sahl/examples/spa ui
 
       - name: cache zig
         id: cache-zig
@@ -315,18 +315,18 @@ jobs:
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
       - name: cross-compile libspa (amd64 + arm64)
-        run: make -C examples/sahl/spa build-linux
+        run: make -C sahl/examples/spa build-linux
 
       - name: build and push to ttl.sh
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
-          context: examples/sahl/spa
+          context: sahl/examples/spa
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ttl.sh/luwes-spa-${{ github.sha }}:1h
 
       - name: smoke test
-        run: make -C examples/sahl/spa smoke IMAGE_TAG=ttl.sh/luwes-spa-${{ github.sha }}:1h
+        run: make -C sahl/examples/spa smoke IMAGE_TAG=ttl.sh/luwes-spa-${{ github.sha }}:1h
 
       - name: image summary
         run: echo "ttl.sh/luwes-spa-${{ github.sha }}:1h" >> $GITHUB_STEP_SUMMARY

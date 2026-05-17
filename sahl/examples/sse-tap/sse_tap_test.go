@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/dio/luwes/buffer"
-	ssetap "github.com/dio/luwes/examples/sahl/sse-tap"
+	ssetap "github.com/dio/luwes/sahl/examples/sse-tap"
 	"github.com/stretchr/testify/assert"
 )
 

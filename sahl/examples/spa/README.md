@@ -31,8 +31,8 @@ Both filters share the same embedded filesystem (`//go:embed ui/dist`).
 ## Build
 
 ```sh
-make -C examples/sahl/spa build        # local .so (host arch)
-make -C examples/sahl/spa build-linux  # cross-compile amd64 + arm64 via zig
+make -C sahl/examples/spa build        # local .so (host arch)
+make -C sahl/examples/spa build-linux  # cross-compile amd64 + arm64 via zig
 ```
 
 Or from inside the spa directory:
@@ -45,13 +45,13 @@ make build
 
 ```sh
 # Cross-compile + build multi-arch image (loads to local Docker daemon)
-make -C examples/sahl/spa docker
+make -C sahl/examples/spa docker
 
 # Push to a registry
-make -C examples/sahl/spa docker-push IMAGE_TAG=ghcr.io/you/spa:latest
+make -C sahl/examples/spa docker-push IMAGE_TAG=ghcr.io/you/spa:latest
 
 # Run and smoke test
-make -C examples/sahl/spa smoke
+make -C sahl/examples/spa smoke
 ```
 
 The Dockerfile uses `envoyproxy/envoy:distroless-v1.38.0` — no shell,
@@ -64,7 +64,7 @@ make run EXAMPLE=sahl/spa
 # or:
 GODEBUG=cgocheck=0 \
 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
-.bin/envoy -c examples/sahl/spa/envoy.yaml --log-level warning
+.bin/envoy -c sahl/examples/spa/envoy.yaml --log-level warning
 ```
 
 Then open http://localhost:10000.
@@ -75,7 +75,7 @@ The `ui/` directory is a standard Vite + React + TypeScript project. The
 built output in `ui/dist/` is embedded into the `.so` at Go compile time.
 
 ```sh
-cd examples/sahl/spa/ui
+cd sahl/examples/spa/ui
 npm install
 npm run dev      # Vite dev server on :5173, proxy /api → Envoy on :10000
 npm run build    # rebuild ui/dist/, then rebuild the .so
@@ -101,7 +101,7 @@ npm run build    # rebuild ui/dist/, then rebuild the .so
 ## Filter structure
 
 ```
-examples/sahl/spa/
+sahl/examples/spa/
   spa.go           SPAHandler, APIHandler, apiLogMiddleware
   spa_test.go      11 unit tests: index.html, assets, /api/*, SPA fallback
   ui/              Vite + React + TypeScript source
