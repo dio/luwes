@@ -82,25 +82,6 @@ luwes ships now, works with the current ABI (`abi/VERSION` pins the commit),
 and can be consumed by changing one import in `go.mod`. If and when the
 upstream SDK adopts these changes, migrating back is the same one-line edit.
 
-## luwes vs jisr
-
-jisr is a middleware abstraction. It copies headers into Go-owned memory,
-spawns a goroutine per request, and presents a `net/http`-style handler
-interface. The copy and goroutine spawn are intentional -- they buy you safe
-memory ownership and clean concurrency at the cost of one allocation and one
-goroutine per request.
-
-luwes operates one layer below. It keeps `UnsafeEnvoyBuffer` -- Envoy-owned
-memory, valid only within a callback -- and hands it directly to the filter. No
-copy. The filter author is responsible for not escaping that pointer past the
-callback boundary. This is the right tradeoff when the filter is
-latency-sensitive (auth, routing, rate limiting) and the author can reason about
-lifetimes.
-
-Use jisr when you want `net/http` ergonomics and you are willing to pay for
-them. Use luwes when you are writing the hot path and every allocation is
-a cost you would rather not pay.
-
 ## The Remaining Allocation
 
 After the handle pool and `GetOne`, one allocation source remained: the

@@ -70,18 +70,67 @@ make flamegraph     # pprof allocs under load (requires hey)
 make e2e            # integration tests against real Envoy
 ```
 
-## Performance
+## Performance Report
 
-After the handle pool and `GetOne` nil-miss optimization:
+Measured against Envoy 1.38.0, ABI v0.1.0, Apple M1 (Go 1.26, `-race` off).
+Load test: `hey -n 1_000_000 -c 200` against the header-auth filter.
+
+### Upstream SDK baseline
+
+```
+BenchmarkHeaderAuthAccept   96 B/op   1 allocs/op   ~118 ns/op
+```
+
+One allocation per request on every worker thread. At 50k RPS that is
+50k heap allocations per second, per thread. The flamegraph showed a single
+source: `getSingleHeader` (98.90% of all allocations), caused by `&valueView`
+crossing the CGO boundary and escaping to the heap.
+
+### luwes: handle pool (Phase 2)
 
 ```
 BenchmarkHeaderAuthAccept   0 B/op   0 allocs/op   ~64 ns/op
-BenchmarkGetOne             0 B/op   0 allocs/op   ~17 ns/op
-BenchmarkGetMiss            0 B/op   0 allocs/op   ~19 ns/op
 ```
 
-The remaining allocation source (`getSingleHeader`) is structural -- a CGO
-boundary escape that requires an ABI change to eliminate. See RATIONALE.md.
+`dymHttpFilterHandle` structs are pooled via `sync.Pool`. Pool return is in
+`on_http_filter_destroy` -- the guaranteed-last callback -- not in
+`stream_complete`, which can race with `destroy`. The flamegraph collapses
+handle allocation to 0.94% (GC evictions only).
+
+### luwes: GetOneInto (Phase 5)
+
+`GetOneInto(key string, out *UnsafeEnvoyBuffer) bool` eliminates the
+remaining CGO escape. The caller stack-allocates `out`; it is cast to
+`*C.envoy_dynamic_module_type_envoy_buffer` via `unsafe.Pointer`. The
+cast is safe: both structs are 16 bytes, `ptr` at offset 0, `length` at
+offset 8.
+
+```
+BenchmarkGetOneInto   0 B/op   0 allocs/op   ~17 ns/op
+```
+
+The 98.90% in the flamegraph is gone. Usage:
+
+```go
+func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
+    var buf shared.UnsafeEnvoyBuffer
+    if !headers.GetOneInto("x-api-key", &buf) {
+        f.handle.SendLocalResponse(401, nil, []byte(`{"error":"missing x-api-key"}`), "auth")
+        return shared.HeadersStatusStop
+    }
+    f.handle.RequestHeaders().Set("x-user-id", buf.ToUnsafeString())
+    return shared.HeadersStatusContinue
+}
+```
+
+### Alloc benchmark summary
+
+| Benchmark | upstream SDK | luwes |
+|-----------|-------------|-------|
+| HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
+| GetOne (miss) | 0 allocs/op | 0 allocs/op |
+| GetOneInto (hit) | n/a | **0 allocs/op** |
+| GetAll (10 headers) | 2 allocs/op | 1 alloc/op |
 
 ## ABI
 
