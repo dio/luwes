@@ -4,3 +4,4 @@ bench/mem.out
 bench/results.txt
 *.h.bak
 go.work.sum
+coverage.out

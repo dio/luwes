@@ -170,11 +170,14 @@ format-check:
 lint:
 	$(GO_TOOL) golangci-lint run --timeout 5m
 
+.PHONY: coverage
+coverage:
+	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+	go tool cover -func=coverage.out
+
 .PHONY: bench
 bench:
 	go test -bench=. -benchmem -count=5 ./bench/ | tee bench/results.txt
-
-.PHONY: bench-profile
 bench-profile:
 	go test -bench=. -benchmem -memprofile=bench/mem.out ./bench/
 	go tool pprof -alloc_objects -http=:8080 bench/mem.out
