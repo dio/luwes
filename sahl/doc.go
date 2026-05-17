@@ -37,6 +37,45 @@
 //	    )
 //	}
 //
+// # Multiple filters in one .so
+//
+// A single Go package can register several filters by calling Register
+// (or any variant) multiple times in init(). Each filter is keyed by its
+// name string, which must match the filter_name field in Envoy's YAML config.
+//
+//	func init() {
+//	    sahl.Register("spa", SPAHandler)
+//	    sahl.Register("api-backend", sahl.Chain(APIHandler, apiLogMiddleware))
+//	}
+//
+// Each call creates an independent entry in sahl's global registry. The two
+// filters are completely isolated: separate handler functions, separate
+// per-request pools (filterPool, requestPool, writerPool), separate metric
+// namespaces. They share the same process and the same embedded assets
+// (e.g. //go:embed ui/dist) but nothing else.
+//
+// Envoy wires them independently via filter_name in envoy.yaml:
+//
+//	http_filters:
+//	  - name: api-backend          # routes to APIHandler
+//	    typed_config:
+//	      "@type": ...DynamicModuleFilter
+//	      dynamic_module_config: { name: spa }
+//	      filter_name: api-backend  # must match the Register() call
+//	  - name: spa                  # routes to SPAHandler
+//	    typed_config:
+//	      "@type": ...DynamicModuleFilter
+//	      dynamic_module_config: { name: spa }
+//	      filter_name: spa         # must match the Register() call
+//
+// Both filters are loaded from the same dynamic_module_config.name (.so file),
+// but dispatched to different Go handlers based on filter_name. Each filter
+// in the chain runs independently: api-backend first (handles /api/* and
+// passes through everything else), spa second (serves assets and index.html).
+//
+// Registering the same name twice panics at startup with "BUG: sahl filter
+// %q registered twice". This catches copy-paste errors before Envoy loads.
+//
 // # Blocking work
 //
 // When a handler needs to make an external call (Redis, auth service, DB),
