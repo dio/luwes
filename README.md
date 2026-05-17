@@ -14,6 +14,11 @@
 Zero-allocation Go SDK for Envoy dynamic modules. Drop-in replacement for
 `github.com/envoyproxy/envoy/source/extensions/dynamic_modules/sdk/go`.
 
+If you want a higher-level handler API with familiar Go types (`Request`,
+`Writer`, `Header`), pooled per-request state, and built-in body buffering
+and response observation, see [sahl](sahl/): the ergonomic layer built on
+top of luwes.
+
 See [RATIONALE.md](RATIONALE.md) for why this exists.
 
 ## Install
