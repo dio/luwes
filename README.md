@@ -125,11 +125,32 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 
 ### Flamegraphs
 
-Before (upstream SDK) -- `getSingleHeader` at 98.90%:
+Generated via `make flamegraph` (go-torch + brendangregg/FlameGraph). Width
+proportional to allocation count. Hover to see stack frames and counts.
+
+**Before (upstream SDK)**
+
+`getSingleHeader` owns a wide bar at 98.90% -- every `GetOne` call forces
+a `var valueView C.envoy_dynamic_module_type_envoy_buffer` local onto the heap
+because its address crosses the CGO boundary (`&valueView` passed to C). The
+Go runtime cannot prove C won't store the pointer, so it pins it on the heap.
+There is no way to avoid this with the current return-by-value API.
 
 ![baseline flamegraph](bench/profiles/flamegraph_baseline.svg)
 
-After (luwes + GetOneInto) -- `getSingleHeader` gone:
+**After (luwes + GetOneInto)**
+
+`getSingleHeader` is gone from the top. `GetOneInto` hands the C function a
+pointer to a caller-owned buffer. The caller declares `var key shared.UnsafeEnvoyBuffer`
+which the compiler stack-allocates (its address stays in Go-managed space, never
+escapes). The cast to `*C.envoy_dynamic_module_type_envoy_buffer` via `unsafe.Pointer`
+is valid because both structs share the same layout: 16 bytes, `ptr` at offset 0,
+`length` at offset 8.
+
+What remains (the thin bars) is `(*Filter).OnRequestHeaders` -- the
+`RequestHeaders().Set("x-user-id", ...)` call, which allocates a new header
+string. That is expected and unavoidable without a mutation API that writes
+directly into Envoy's header table.
 
 ![after getoneinto flamegraph](bench/profiles/flamegraph_getoneinto.svg)
 
