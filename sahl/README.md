@@ -1,11 +1,18 @@
 # sahl
 
 `sahl` (سهل, Arabic for "easy") is an ergonomic HTTP filter API for Envoy dynamic
-modules built on top of luwes. It gives you familiar Go types ([Request], [Writer],
-[Header]) without the goroutine-per-request overhead of jisr.
+modules built on top of luwes.
 
-Handlers run on the Envoy worker thread by default. Blocking work is opt-in via
-`Writer.Go`.
+- `Request` gives you the incoming request: method, path, host, and headers via
+  `r.Header.Peek` (zero-alloc unsafe string) or `r.Header.Get` (copied, cacheable).
+- `Writer` queues mutations to apply after your handler returns: set request headers,
+  send a local response, set dynamic metadata, increment counters, clear route cache.
+  Blocking work is opt-in via `Writer.Go`, which runs a goroutine and hops back to
+  the Envoy worker thread when done.
+- `Header` is the header accessor on `Request`: `Peek`, `Get`, `Values`, `Range`.
+
+Handlers run on the Envoy worker thread synchronously by default. No goroutine is
+spawned unless your handler calls `Writer.Go`.
 
 ## Quick start
 
@@ -304,10 +311,9 @@ with `GetOneInto` if you need 0 allocs end-to-end.
 Comparison:
 
 | Layer | allocs/op (CGO, accept path) |
-|-------|------------------------------|
-| raw luwes (GetOneInto) | 0 |
-| sahl (Peek) | 3 |
-| jisr (goroutine per request) | 20+ |
+|---|---|
+| raw luwes (`GetOneInto`) | 0 |
+| sahl (`Peek`) | 3 |
 
 ## Example: header-auth-sahl
 

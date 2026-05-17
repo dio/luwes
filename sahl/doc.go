@@ -1,9 +1,9 @@
 // Package sahl (سهل) is an ergonomic HTTP filter API for Envoy dynamic modules
 // built on top of luwes.
 //
-// sahl provides familiar Go types ([Request], [Writer], [Header]) without
-// the goroutine-per-request overhead of jisr. Handlers run on the Envoy worker
-// thread by default. Blocking work is opt-in via [Writer.Go].
+// sahl provides familiar Go types ([Request], [Writer], [Header]) for writing
+// Envoy HTTP filters. Handlers run on the Envoy worker thread synchronously by
+// default. Blocking work is opt-in via [Writer.Go].
 //
 // # Registration
 //
@@ -301,6 +301,5 @@
 //	Header.Get per key:    1 alloc per unique key read
 //	Header.Peek per key:   0 allocs (unsafe string, valid within callback only)
 //
-// vs jisr: goroutine + all headers copied = 20+ allocs per request.
 // vs raw luwes: 0 allocs (GetOneInto), no ergonomics.
 package sahl
