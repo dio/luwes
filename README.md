@@ -3,13 +3,13 @@
 [![ci](https://github.com/dio/luwes/actions/workflows/ci.yml/badge.svg)](https://github.com/dio/luwes/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/dio/luwes/badge.svg?branch=main)](https://coveralls.io/github/dio/luwes?branch=main)
 
-> **On the coverage number:** the badge reflects only packages testable without
-> a live Envoy process. `abi_impl` -- the CGO binding layer that implements
-> every header, body, span, and scheduler call -- is excluded because it
-> requires the Envoy ABI to be loaded at runtime. That code is exercised by
-> the e2e suite (`make e2e`) which runs against a real Envoy binary in CI.
-> Per-package coverage on the unit-testable packages: hello 100%, utility 69%,
-> header-auth 67%, shared/fake 32%, root registry 26%.
+> **On the coverage number:** the badge only counts packages testable without
+> a live Envoy process. `abi_impl` -- the CGO layer that backs every header,
+> body, span, and scheduler call -- can't run without the Envoy ABI loaded, so
+> it's excluded from unit tests and pulled down the total. That code gets
+> exercised by the e2e suite against a real Envoy binary in CI.
+> Unit-testable package breakdown: hello 100%, utility 69%, header-auth 67%,
+> shared/fake 32%, root registry 26%.
 
 Zero-allocation Go SDK for Envoy dynamic modules. Drop-in replacement for
 `github.com/envoyproxy/envoy/source/extensions/dynamic_modules/sdk/go`.
