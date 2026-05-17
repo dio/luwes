@@ -160,7 +160,7 @@ directly into Envoy's header table.
 |-----------|-------------|-------|
 | HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
 | GetOne (hit) | 1 alloc/op | 1 alloc/op |
-| GetOneInto (hit) | n/a | **0 allocs/op** |
+| GetOneInto (hit) | API does not exist | **0 allocs/op** |
 | GetAll (10 headers) | 2 allocs/op | 1 alloc/op |
 
 `GetOne` allocates on the real CGO path in both SDKs: `&valueView` escapes to the
