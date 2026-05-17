@@ -57,6 +57,84 @@
 //	sahlFilter      -- one per request. Pool-allocated. Zero-alloced on warm
 //	                   pool hit.
 //
+// ## Registration function comparison
+//
+// Quick reference -- pick the row that matches your filter:
+//
+//	Registration function          Per-listener  Metrics  Body  Response  Multi-listener safe
+//	------------------------------ ------------- -------- ----- --------- -------------------
+//	Register                       no            no       no    no        yes (stateless)
+//	RegisterWithConfig             no            yes      no    no        NO (package vars overwritten)
+//	RegisterWithResponse           no            no       no    yes       yes (stateless)
+//	RegisterWithConfigAndResponse  no            yes      no    yes       NO (package vars overwritten)
+//	RegisterWithBody               no            no       yes   no        yes (stateless)
+//	RegisterWithBodyAndResponse    no            no       yes   yes       yes (stateless)
+//	RegisterWithBodyConfigAndResponse no          yes     yes   yes       NO (package vars overwritten)
+//	RegisterFactory                YES           YES      no    no        YES (closure per listener)
+//
+// "Multi-listener safe" means two or more envoy.yaml listeners can use this
+// filter with different filter_config bytes without one overwriting the other.
+// Any function that writes to package-level vars in its configFn is NOT safe
+// for multi-listener use.
+//
+// ## Side-by-side: RegisterWithConfig vs RegisterFactory
+//
+// Both patterns define a counter and parse config. The difference is where
+// that state lives and what happens when Envoy creates a second listener.
+//
+// RegisterWithConfig -- state in package vars, second listener overwrites first:
+//
+//	// package-level: shared by ALL listeners using this filter
+//	var (
+//	    reqTotal sahl.MetricID
+//	    allowed  map[string]struct{}
+//	)
+//
+//	func init() {
+//	    sahl.RegisterWithConfig("auth",
+//	        func(h sahl.ConfigHandle) error {
+//	            cfg := parseConfig(h.RawConfig()) // listener 2 overwrites listener 1
+//	            allowed = buildSet(cfg.AllowedKeys)
+//	            reqTotal, _ = h.DefineCounter("auth_requests_total", "result")
+//	            return nil
+//	        },
+//	        func(w *sahl.Writer, r *sahl.Request) {
+//	            key, _ := r.Header.Peek("x-api-key")
+//	            if _, ok := allowed[key]; !ok { // reads the LAST-written allowed
+//	                w.IncrementCounter(reqTotal, 1, "rejected")
+//	                w.Send(401, `{"error":"unauthorized"}`)
+//	                return
+//	            }
+//	            w.IncrementCounter(reqTotal, 1, "allowed")
+//	        },
+//	    )
+//	}
+//
+// RegisterFactory -- state in closure, each listener gets its own copy:
+//
+//	func init() {
+//	    sahl.RegisterFactory("auth",
+//	        func(h sahl.ConfigHandle) (sahl.HandlerFunc, error) {
+//	            // runs once per listener; vars are local to this call
+//	            cfg := parseConfig(h.RawConfig())
+//	            allowed := buildSet(cfg.AllowedKeys) // listener 1 and 2 each get their own
+//	            reqTotal, err := h.DefineCounter("auth_requests_total", "result")
+//	            if err != nil {
+//	                return nil, err
+//	            }
+//	            return func(w *sahl.Writer, r *sahl.Request) {
+//	                key, _ := r.Header.Peek("x-api-key")
+//	                if _, ok := allowed[key]; !ok { // reads THIS listener's allowed
+//	                    w.IncrementCounter(reqTotal, 1, "rejected")
+//	                    w.Send(401, `{"error":"unauthorized"}`)
+//	                    return
+//	                }
+//	                w.IncrementCounter(reqTotal, 1, "allowed")
+//	            }, nil
+//	        },
+//	    )
+//	}
+//
 // ## When to use which registration function
 //
 // Register: handler needs no config, no metrics, no per-listener state. A
