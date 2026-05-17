@@ -1,4 +1,4 @@
-GO_TOOL := go tool -modfile=tools/go.mod
+GO_TOOL := GOWORK=off go tool -modfile=tools/go.mod
 
 ZIG_VERSION   := 0.16.0
 ZIG_BIN       := $(CURDIR)/.bin/zig
@@ -141,11 +141,11 @@ test:
 
 .PHONY: format
 format:
-	GOWORK=off $(GO_TOOL) golangci-lint fmt
+	$(GO_TOOL) golangci-lint fmt
 
 .PHONY: lint
 lint:
-	GOWORK=off $(GO_TOOL) golangci-lint run --timeout 5m
+	$(GO_TOOL) golangci-lint run --timeout 5m
 
 .PHONY: bench
 bench:
