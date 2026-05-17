@@ -127,11 +127,11 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 
 Before (upstream SDK) -- `getSingleHeader` at 98.90%:
 
-![baseline flamegraph](bench/profiles/allocs_header_auth_500k.svg)
+![baseline flamegraph](bench/profiles/flamegraph_baseline.svg)
 
 After (luwes + GetOneInto) -- `getSingleHeader` gone:
 
-![after getoneinto flamegraph](bench/profiles/allocs_header-auth-getoneinto.svg)
+![after getoneinto flamegraph](bench/profiles/flamegraph_getoneinto.svg)
 
 ### Alloc benchmark summary
 

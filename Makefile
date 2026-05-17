@@ -126,8 +126,12 @@ flamegraph: build $(ENVOY_BIN)
 	@echo "Top allocations:"
 	@go tool pprof -alloc_objects -top bench/profiles/allocs_$(EXAMPLE).out 2>/dev/null | head -15
 	@echo ""
-	@echo "Open flamegraph:"
-	@echo "  go tool pprof -alloc_objects -http=:8080 bench/profiles/allocs_$(EXAMPLE).out"
+	@echo "Generating flamegraph..."
+	@PATH="$(CURDIR)/scripts/flamegraph:$$PATH" \
+		go-torch -b bench/profiles/allocs_$(EXAMPLE).out --pprofArgs="-alloc_objects" \
+		-f bench/profiles/flamegraph_$(EXAMPLE).svg 2>/dev/null && \
+		echo "  Flamegraph: bench/profiles/flamegraph_$(EXAMPLE).svg" || \
+		echo "  (install go-torch for flamegraph: go install github.com/uber-archive/go-torch@latest)"
 
 # Start otel-front (local OTLP receiver + browser UI)
 # Receives on gRPC :4317, HTTP :4318, serves UI on :8000
