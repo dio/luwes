@@ -130,7 +130,7 @@ proportional to allocation count. Hover to see stack frames and counts.
 
 **Before (upstream SDK)**
 
-`getSingleHeader` owns a wide bar at 98.90%. Every `GetOne` call forces
+`getSingleHeader` owns a wide bar at 98.90%. Every `GetOne` call on a hit forces
 `var valueView C.envoy_dynamic_module_type_envoy_buffer` onto the heap
 because its address crosses the CGO boundary. The Go runtime cannot prove C
 won't store the pointer, so it pins it on the heap. There is no way around
@@ -159,6 +159,7 @@ directly into Envoy's header table.
 | Benchmark | upstream SDK | luwes |
 |-----------|-------------|-------|
 | HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
+| GetOne (hit) | 1 alloc/op | 0 allocs/op |
 | GetOneInto (hit) | n/a | **0 allocs/op** |
 | GetAll (10 headers) | 2 allocs/op | 1 alloc/op |
 
