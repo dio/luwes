@@ -1,3 +1,53 @@
+// Package abi_impl is the CGO binding layer between Envoy's dynamic module ABI
+// and the luwes Go SDK. It is the only package in luwes that imports "C".
+//
+// Everything here is internal to the module binary. Filter authors never import
+// this package directly -- they blank-import it from their cmd/main.go:
+//
+//	import _ "github.com/dio/luwes/abi_impl"
+//
+// That import triggers the package-level init() which registers the ABI version
+// string and wires luwes into Envoy's filter lifecycle.
+//
+// # Structure
+//
+// The package is organized into four layers:
+//
+//  1. Conversion helpers -- Go<->C type bridges (stringToModuleBuffer, etc.).
+//     None of these allocate; they produce view structs over existing memory.
+//
+//  2. Handle types -- dymHeaderMap, dymBodyBuffer, dymScheduler, dymSpan,
+//     dymHttpFilterHandle, dymConfigHandle. Each wraps a C pointer provided by
+//     Envoy and implements the corresponding shared.* interface.
+//
+//  3. Manager -- a sharded concurrent map (manager[T]) that pins Go objects so
+//     their addresses can be round-tripped through C as opaque pointers.
+//
+//  4. ABI callbacks -- the //export functions that Envoy calls at well-defined
+//     points in the filter lifecycle (config load, request, response, destroy).
+//
+// # Memory model
+//
+// UnsafeEnvoyBuffer values returned by header and body accessors point into
+// Envoy-owned memory. They are valid only within the callback in which they are
+// obtained. Filter code must not retain them past the callback boundary without
+// copying the contents into Go-owned memory first.
+//
+// # CGO escape
+//
+// Any local variable whose address is passed to a C function escapes to the
+// heap -- CGO requires the GC to be able to pin the object, and the GC only
+// pins heap objects. Stack-allocated locals are not eligible. This is the root
+// cause of the valueView allocation in getSingleHeader. It is structural and
+// cannot be fixed without an ABI change (see RATIONALE.md).
+//
+// # Handle pool
+//
+// dymHttpFilterHandle is pooled via sync.Pool. The pool return point is
+// on_http_filter_destroy -- the guaranteed-last callback for a filter instance.
+// Returning the handle in on_http_filter_stream_complete is incorrect because
+// on_http_filter_destroy can fire after stream_complete and will see a handle
+// that has already been reassigned to a different request.
 package abi_impl
 
 /*
@@ -40,7 +90,13 @@ type httpFilterSharedDataWrapper struct {
 
 const numManagerShards = 32
 
-// The managers to keep track of configs and plugins.
+// manager is a sharded concurrent map that pins Go objects so their addresses
+// can be safely passed through C as opaque pointers. Sharding on the pointer
+// value reduces lock contention across Envoy worker threads.
+//
+// T is one of the wrapper types (httpFilterConfigWrapper, httpFilterWrapper,
+// etc.). The manager never owns the objects -- callers allocate and the manager
+// only records the pointer until remove() is called.
 type manager[T any] struct {
 	data  [numManagerShards]map[uintptr]*T
 	mutex [numManagerShards]sync.Mutex
@@ -82,14 +138,24 @@ func newManager[T any]() *manager[T] {
 	return m
 }
 
-var configManager = newManager[httpFilterConfigWrapper]()
-var configPerRouteManager = newManager[httpFilterConfigWrapperPerRoute]()
-var pluginManager = newManager[httpFilterWrapper]()
-var sharedDataManager = newManager[httpFilterSharedDataWrapper]()
+var (
+	// configManager tracks active HttpFilterConfigWrapper instances, keyed by
+	// the pointer passed to Envoy as http_filter_config_module_ptr.
+	configManager = newManager[httpFilterConfigWrapper]()
+	// configPerRouteManager tracks per-route config wrappers.
+	configPerRouteManager = newManager[httpFilterConfigWrapperPerRoute]()
+	// pluginManager tracks active dymHttpFilterHandle instances (one per
+	// in-flight request), keyed by the pointer passed to Envoy as
+	// http_filter_module_ptr.
+	pluginManager = newManager[httpFilterWrapper]()
+	// sharedDataManager tracks shared data wrappers for cross-filter state.
+	sharedDataManager = newManager[httpFilterSharedDataWrapper]()
+)
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////
+// Conversion helpers: zero-allocation Go<->C type bridges.
+// All functions produce view structs over existing memory -- no copies.
+// Callers must ensure the source data outlives any C call that receives these
+// views; use runtime.KeepAlive where the compiler cannot prove liveness.
 
 func nullModuleBuffer() C.envoy_dynamic_module_type_module_buffer {
 	return C.envoy_dynamic_module_type_module_buffer{
@@ -200,6 +266,13 @@ func hostLog(level shared.LogLevel, format string, args []any) {
 	runtime.KeepAlive(message)
 }
 
+// dymHeaderMap implements shared.HeaderMap for a specific header phase
+// (request headers, request trailers, response headers, response trailers).
+// headerType is the ABI constant that identifies the phase; it is set once at
+// handle initialization and never changes for the lifetime of the request.
+//
+// All reads return UnsafeEnvoyBuffer -- Envoy-owned memory valid only within
+// the current callback. Do not retain these values past the callback boundary.
 type dymHeaderMap struct {
 	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr
 	headerType    C.envoy_dynamic_module_type_http_header_type
@@ -312,6 +385,9 @@ func (h *dymHeaderMap) Remove(key string) {
 	runtime.KeepAlive(key)
 }
 
+// dymBodyBuffer implements shared.BodyBuffer for a specific body phase.
+// bufferType distinguishes received vs. buffered body for both request and
+// response. Like dymHeaderMap, it holds a view into Envoy-owned memory.
 type dymBodyBuffer struct {
 	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr
 	bufferType    C.envoy_dynamic_module_type_http_body_type
@@ -371,6 +447,11 @@ func (b *dymBodyBuffer) Drain(size uint64) {
 	)
 }
 
+// dymScheduler implements shared.Scheduler. It bridges Envoy's callback-based
+// scheduling (post a task ID to the host, receive it back on the worker thread)
+// into a Go-friendly func() interface. The internal task map is protected by a
+// mutex because Schedule() can be called from any goroutine, while onScheduled()
+// is always called from the Envoy worker thread.
 type dymScheduler struct {
 	schedulerPtr  unsafe.Pointer
 	schedulerLock sync.Mutex
@@ -559,6 +640,14 @@ func (s *dymChildSpan) Finish() {
 	s.spanPtr = nil
 }
 
+// dymHttpFilterHandle is the per-request handle. It implements
+// shared.HttpFilterHandle and carries all per-request state: header maps, body
+// buffers, the active filter instance, scheduler, callout callbacks, and stream
+// callbacks.
+//
+// Instances are pooled in dymHttpFilterHandlePool. Pool return happens only in
+// on_http_filter_destroy -- never in on_http_filter_stream_complete. See the
+// package doc and RATIONALE.md for why.
 type dymHttpFilterHandle struct {
 	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr
 
@@ -1468,7 +1557,6 @@ func (h *dymHttpFilterHandle) SendHttpStreamTrailers(
 	streamID uint64, trailers [][2]string,
 ) bool {
 	// Prepare trailers.
-	// Prepare trailers.
 	trailerViews := headersToModuleHttpHeaderSlice(trailers)
 	ret := C.envoy_dynamic_module_callback_http_stream_send_trailers(
 		h.hostPluginPtr,
@@ -1650,6 +1738,10 @@ func (h *dymHttpFilterHandle) reset(
 	h.downstreamWatermarkCallbacks = nil
 }
 
+// dymConfigHandle is the per-filter-config handle. One instance exists for each
+// filter config block in envoy.yaml (i.e., per listener/route, not per request).
+// It is created in on_http_filter_config_new and destroyed in
+// on_http_filter_config_destroy. It implements shared.HttpFilterConfigHandle.
 type dymConfigHandle struct {
 	hostConfigPtr    C.envoy_dynamic_module_type_http_filter_config_envoy_ptr
 	calloutCallbacks map[uint64]shared.HttpCalloutCallback
@@ -1883,6 +1975,10 @@ func (h *dymRouteConfigHandle) DefineCounter(name string,
 	tagKeys ...string) (shared.MetricID, shared.MetricsResult) {
 	return 0, shared.MetricsFrozen
 }
+
+// ABI callbacks -- functions exported to C that Envoy calls at specific points
+// in the filter lifecycle. Names match the ABI contract defined in abi/abi.h.
+// These are the only functions with C linkage in the package.
 
 //export envoy_dynamic_module_on_program_init
 func envoy_dynamic_module_on_program_init() C.envoy_dynamic_module_type_abi_version_module_ptr {
