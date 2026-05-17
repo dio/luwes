@@ -9,6 +9,7 @@ import (
 
 	headerauth "github.com/dio/luwes/examples/header-auth"
 	headerauthsahl "github.com/dio/luwes/examples/sahl/header-auth"
+	_ "github.com/dio/luwes/examples/sahl/sse-tap" // registers via init()
 )
 
 func init() {
@@ -17,6 +18,10 @@ func init() {
 
 	// sahl ergonomic layer: same contract, functional handler (port 10001 in e2e).
 	sdk.RegisterRaw("header-auth-sahl", sahl.Factory(headerauthsahl.Handler))
+
+	// sahl sse-tap: response observer, SSE token extraction (port 10002 in e2e).
+	// Registered via init() in examples/sahl/sse-tap.
+	sdk.RegisterHttpFilterConfigFactories(sahl.Factories())
 
 	sdk.RegisterHttpFilterConfigFactories(sdk.Factories())
 }

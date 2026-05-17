@@ -1,7 +1,8 @@
 // Package e2e runs integration tests against a real Envoy binary.
 //
-// TestMain builds a combined .so from all e2e filters (header-auth and
-// header-auth-sahl), starts Envoy, and tears it all down when done.
+// TestMain builds a combined .so from all e2e filters (header-auth,
+// header-auth-sahl, sse-tap), starts a mock SSE upstream, starts Envoy,
+// and tears everything down when done.
 //
 // Prerequisites:
 //   - Envoy binary at .bin/envoy (run: make .bin/envoy) or set ENVOY_BIN
@@ -36,12 +37,15 @@ const (
 	headerAuthAddr = "http://localhost:10000"
 	// Port 10001: header-auth-sahl filter (sahl ergonomic layer)
 	headerAuthSahlAddr = "http://localhost:10001"
-	adminAddr          = "http://localhost:9901"
+	// Port 10002: sse-tap filter (sahl response observer)
+	sseTapAddr = "http://localhost:10002"
+	adminAddr  = "http://localhost:9901"
 )
 
 var (
-	envoyCmd    *exec.Cmd
-	projectRoot string
+	envoyCmd      *exec.Cmd
+	projectRoot   string
+	mockSSEServer *http.Server
 )
 
 func TestMain(m *testing.M) {
@@ -53,6 +57,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "SKIP: envoy not found at %s (run: make .bin/envoy)\n", bin)
 		os.Exit(0)
 	}
+
+	// Start mock SSE upstream before Envoy so the cluster is reachable on load.
+	sseUpstreamPort := startMockSSEServer()
+	fmt.Fprintf(os.Stderr, "e2e: mock SSE upstream listening on 127.0.0.1:%d\n", sseUpstreamPort)
 
 	soPath := filepath.Join(projectRoot, "libe2e.so")
 
@@ -76,7 +84,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "e2e: reusing existing libe2e.so (LUWES_SKIP_BUILD=1)")
 	}
 
-	cfgPath := writeEnvoyConfig()
+	cfgPath := writeEnvoyConfig(sseUpstreamPort)
 	defer os.Remove(cfgPath)
 
 	envoyCmd = exec.Command(bin,
@@ -108,6 +116,9 @@ func TestMain(m *testing.M) {
 
 	envoyCmd.Process.Kill()
 	envoyCmd.Wait()
+	if mockSSEServer != nil {
+		mockSSEServer.Close()
+	}
 	os.Exit(code)
 }
 
@@ -133,8 +144,8 @@ func waitReady(timeout time.Duration) bool {
 	return false
 }
 
-func writeEnvoyConfig() string {
-	cfg := `
+func writeEnvoyConfig(sseUpstreamPort int) string {
+	cfg := fmt.Sprintf(`
 static_resources:
   listeners:
     # Port 10000: header-auth (raw luwes SDK)
@@ -205,10 +216,54 @@ static_resources:
                             status: 200
                             body: { inline_string: "ok" }
 
+    # Port 10002: sse-tap (sahl response observer, proxies to mock SSE upstream)
+    - name: sse-tap
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10002 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: sse_tap
+                http_filters:
+                  - name: sse-tap
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: sse-tap
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: sse_tap
+                  virtual_hosts:
+                    - name: sse_upstream
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: sse_upstream
+                            timeout: 30s
+
+  clusters:
+    - name: sse_upstream
+      connect_timeout: 5s
+      type: STATIC
+      load_assignment:
+        cluster_name: sse_upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: %d }
+
 admin:
   address:
     socket_address: { address: 127.0.0.1, port_value: 9901 }
-`
+`, sseUpstreamPort)
+
 	f, err := os.CreateTemp("", "luwes-e2e-*.yaml")
 	if err != nil {
 		panic(err)
