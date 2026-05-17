@@ -1,17 +1,24 @@
 // Package auth demonstrates [sahl.RegisterFactory] -- the pattern for filters
 // that need per-listener isolated state: parsed config and metric IDs.
 //
-// # Why RegisterFactory instead of RegisterWithConfig?
+// See [sahl package doc] for the full factory design: the three Envoy lifetimes
+// (program init, filter config create, filter instance create), when to use
+// RegisterFactory vs RegisterWithConfig, the metric ID constraint, and the
+// configHandleImpl wrapping subtlety that affects how tests pass raw config.
+// # Why RegisterFactory instead of RegisterWithConfig
 //
 // RegisterWithConfig stores metric IDs and parsed config in package-level vars.
-// That works when there is exactly one Envoy listener using this filter. But if
-// two listeners use the same filter name with different filter_config bytes
-// (e.g. different allowed key sets per route), RegisterWithConfig calls the
-// ConfigFunc twice and the second call overwrites the package vars.
+// That works when there is exactly one Envoy listener using this filter. If two
+// listeners use the same filter_name with different filter_config bytes, the
+// configFn runs twice and the second call silently overwrites the first
+// listener's config. No error, wrong behavior.
 //
 // RegisterFactory constructs a new HandlerFunc per filter config instance.
 // Each listener gets its own closure capturing its own Config and MetricIDs.
-// No shared state, no race, no package vars.
+// No shared mutable state, no race, no package vars.
+//
+// This example shows the pattern concretely: two listeners in envoy.yaml, same
+// .so, two independent allowed-key sets.
 //
 // # Filter behaviour
 //

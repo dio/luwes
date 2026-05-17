@@ -37,6 +37,104 @@
 //	    )
 //	}
 //
+// # Factories
+//
+// ## The three lifetimes
+//
+// Envoy's dynamic module API has three distinct creation points:
+//
+//  1. program init          -- once per process (global registry)
+//  2. filter config create  -- once per Envoy listener / filter chain
+//  3. filter instance create -- once per HTTP request
+//
+// sahl has a type for each:
+//
+//	configFactory   -- created once per registered name; Envoy calls its
+//	                   Create method once per filter_chain that references
+//	                   this filter. Produces a filterFactory.
+//	filterFactory   -- one per listener. Holds the resolved HandlerFunc for
+//	                   that listener. Produces sahlFilters.
+//	sahlFilter      -- one per request. Pool-allocated. Zero-alloced on warm
+//	                   pool hit.
+//
+// ## When to use which registration function
+//
+// Register: handler needs no config, no metrics, no per-listener state. A
+// passthrough tagger, an always-reject guard, a debug header injector.
+//
+//	sahl.Register("my-filter", myHandlerFunc)
+//
+// RegisterWithConfig: one listener uses this filter and the handler needs
+// metrics or parsed config. The configFn runs once, writes to package-level
+// vars, the handler reads them. Correct as long as the single-listener
+// constraint holds. The failure mode is silent: if a second listener in
+// envoy.yaml uses the same filter_name with different filter_config bytes,
+// the configFn runs a second time and overwrites the package vars. First
+// listener now uses the second listener's config. No error, no warning.
+//
+//	sahl.RegisterWithConfig("my-filter", configFn, handlerFn)
+//
+// RegisterFactory: multiple listeners may use this filter with different
+// configs, or you want to future-proof. The factory is called once per
+// filter_chain. Each call returns a new HandlerFunc that closes over its
+// own parsed config and metric IDs. Two listeners, two closures, complete
+// isolation. This is the correct default once you have any per-listener
+// state at all.
+//
+//	sahl.RegisterFactory("my-filter", func(h sahl.ConfigHandle) (sahl.HandlerFunc, error) {
+//	    cfg, err := parseConfig(h.RawConfig())
+//	    if err != nil { return nil, err }
+//	    counter, err := h.DefineCounter("my_requests_total", "result")
+//	    if err != nil { return nil, err }
+//	    allowed := make(map[string]struct{}, len(cfg.AllowedKeys))
+//	    for _, k := range cfg.AllowedKeys { allowed[k] = struct{}{} }
+//	    return func(w *sahl.Writer, r *sahl.Request) {
+//	        key, _ := r.Header.Peek("x-api-key")
+//	        if _, ok := allowed[key]; !ok {
+//	            w.IncrementCounter(counter, 1, "rejected")
+//	            w.Send(401, `{"error":"unauthorized"}`)
+//	            return
+//	        }
+//	        w.IncrementCounter(counter, 1, "allowed")
+//	    }, nil
+//	})
+//
+// See examples/sahl/auth for a complete per-listener isolation example.
+//
+// ## The metric ID constraint
+//
+// Metric IDs must be defined at filter config time, not per-request.
+// ConfigHandle is only available in configFn or the factory function --
+// you cannot call DefineCounter from a HandlerFunc. Envoy allocates the
+// metric slot once; calling DefineCounter per-request would re-define it
+// on every request (undefined behavior, likely panic or silent leak).
+//
+// With RegisterWithConfig, metric IDs live in package vars -- correct for
+// single-listener deployments. With RegisterFactory, they are captured in
+// the closure -- each listener gets its own MetricID value and its own
+// Envoy stat slot.
+//
+// ## The configHandleImpl wrapping subtlety
+//
+// configFactory.Create wraps the incoming shared.HttpFilterConfigHandle
+// and the raw []byte (the filter_config bytes from envoy.yaml) into a
+// configHandleImpl. ConfigHandle.RawConfig() returns c.raw (the []byte
+// parameter), not the underlying handle's RawConfig(). This matters in
+// tests: you must pass the raw config bytes as the second arg to Create,
+// not only set them on the fake handle:
+//
+//	factory, err := def.Create(&fakeHandle{}, []byte(configJSON))  // correct
+//	factory, err := def.Create(&fakeHandle{raw: configJSON}, nil)  // wrong: RawConfig() returns nil
+//
+// ## The filterDef copy in Create
+//
+// configFactory.Create copies the registered filterDef into a new struct
+// before calling the factory or configFn. This isolates each filterFactory's
+// handler from the global registry entry. Without the copy, a second Create
+// call (second listener) would race to mutate the same filterDef. For
+// RegisterFactory the copy's handler field is always overwritten by the
+// factory result; the copy is defensive bookkeeping.
+//
 // # Multiple filters in one .so
 //
 // A single Go package can register several filters by calling Register
