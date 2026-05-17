@@ -221,3 +221,10 @@ clean:
 tidy:
 	go mod tidy
 
+# Run Lightpanda + Playwright e2e tests for the sahl/spa example.
+# Requires: .bin/envoy (run: make .bin/envoy), Node >= 24.
+# Builds dist/libspa.so, starts Envoy, runs 13 browser tests, tears down.
+.PHONY: spa-e2e
+spa-e2e: $(ENVOY_BIN)
+	ENVOY_BIN=$(ENVOY_BIN) bash examples/sahl/spa/e2e/run.sh
+

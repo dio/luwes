@@ -1,0 +1,13 @@
+{
+  "name": "spa-e2e",
+  "version": "1.0.0",
+  "description": "E2e tests for the luwes sahl/spa example using Lightpanda + Playwright (CDP)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test spa.test.mjs"
+  },
+  "dependencies": {
+    "@lightpanda/browser": "latest",
+    "playwright-core": "latest"
+  }
+}
