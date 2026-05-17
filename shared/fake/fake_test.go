@@ -3,6 +3,9 @@ package fake_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/dio/luwes/shared/fake"
 )
 
@@ -11,29 +14,19 @@ import (
 func TestFakeHeaderMap_GetOne(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{"x-api-key": "secret"})
 	buf := h.GetOne("x-api-key")
-	if buf.Ptr == nil {
-		t.Fatal("expected non-nil ptr")
-	}
-	if got := buf.ToUnsafeString(); got != "secret" {
-		t.Fatalf("got %q, want %q", got, "secret")
-	}
+	require.NotNil(t, buf.Ptr)
+	assert.Equal(t, "secret", buf.ToUnsafeString())
 }
 
 func TestFakeHeaderMap_GetOne_CaseInsensitive(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{"Content-Type": "application/json"})
-	if h.GetOne("content-type").Ptr == nil {
-		t.Fatal("lowercase lookup failed")
-	}
-	if h.GetOne("CONTENT-TYPE").Ptr == nil {
-		t.Fatal("uppercase lookup failed")
-	}
+	assert.NotNil(t, h.GetOne("content-type").Ptr, "lowercase lookup")
+	assert.NotNil(t, h.GetOne("CONTENT-TYPE").Ptr, "uppercase lookup")
 }
 
 func TestFakeHeaderMap_GetOne_Miss(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{})
-	if h.GetOne("x-missing").Ptr != nil {
-		t.Fatal("expected nil ptr on miss")
-	}
+	assert.Nil(t, h.GetOne("x-missing").Ptr)
 }
 
 func TestFakeHeaderMap_Get_MultiValue(t *testing.T) {
@@ -41,122 +34,88 @@ func TestFakeHeaderMap_Get_MultiValue(t *testing.T) {
 		"x-tag": {"a", "b", "c"},
 	})
 	vals := h.Get("x-tag")
-	if len(vals) != 3 {
-		t.Fatalf("got %d values, want 3", len(vals))
-	}
-	for i, want := range []string{"a", "b", "c"} {
-		if got := vals[i].ToUnsafeString(); got != want {
-			t.Errorf("vals[%d] = %q, want %q", i, got, want)
-		}
-	}
+	require.Len(t, vals, 3)
+	assert.Equal(t, "a", vals[0].ToUnsafeString())
+	assert.Equal(t, "b", vals[1].ToUnsafeString())
+	assert.Equal(t, "c", vals[2].ToUnsafeString())
 }
 
 func TestFakeHeaderMap_Get_Miss(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{})
-	if vals := h.Get("x-missing"); vals != nil {
-		t.Fatalf("expected nil on miss, got %v", vals)
-	}
+	assert.Nil(t, h.Get("x-missing"))
 }
 
 func TestFakeHeaderMap_GetAll(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{"a": "1", "b": "2"})
-	if len(h.GetAll()) != 2 {
-		t.Fatalf("got %d pairs, want 2", len(h.GetAll()))
-	}
+	assert.Len(t, h.GetAll(), 2)
 }
 
 func TestFakeHeaderMap_Set_RecordsMutation(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{})
 	h.Set("x-foo", "bar")
 
-	if got := h.GetString("x-foo"); got != "bar" {
-		t.Fatalf("got %q, want %q", got, "bar")
-	}
-	if len(h.Sets) != 1 || h.Sets[0].Key != "x-foo" || h.Sets[0].Value != "bar" {
-		t.Fatalf("mutation not recorded: %+v", h.Sets)
-	}
+	assert.Equal(t, "bar", h.GetString("x-foo"))
+	require.Len(t, h.Sets, 1)
+	assert.Equal(t, fake.SetCall{Key: "x-foo", Value: "bar"}, h.Sets[0])
 }
 
 func TestFakeHeaderMap_Set_Overwrites(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{"x-foo": "old"})
 	h.Set("x-foo", "new")
-	if got := h.GetString("x-foo"); got != "new" {
-		t.Fatalf("got %q, want %q", got, "new")
-	}
+	assert.Equal(t, "new", h.GetString("x-foo"))
 }
 
 func TestFakeHeaderMap_Add_RecordsMutation(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{"x-tag": "a"})
 	h.Add("x-tag", "b")
 
-	vals := h.Get("x-tag")
-	if len(vals) != 2 {
-		t.Fatalf("got %d values after Add, want 2", len(vals))
-	}
-	if len(h.Adds) != 1 || h.Adds[0].Key != "x-tag" || h.Adds[0].Value != "b" {
-		t.Fatalf("mutation not recorded: %+v", h.Adds)
-	}
+	assert.Len(t, h.Get("x-tag"), 2)
+	require.Len(t, h.Adds, 1)
+	assert.Equal(t, fake.AddCall{Key: "x-tag", Value: "b"}, h.Adds[0])
 }
 
 func TestFakeHeaderMap_Remove(t *testing.T) {
 	h := fake.NewFakeHeaderMap(map[string]string{"x-del": "v"})
 	h.Remove("x-del")
 
-	if h.GetOne("x-del").Ptr != nil {
-		t.Fatal("header should be gone after Remove")
-	}
-	if len(h.Removes) != 1 || h.Removes[0] != "x-del" {
-		t.Fatalf("mutation not recorded: %+v", h.Removes)
-	}
+	assert.Nil(t, h.GetOne("x-del").Ptr)
+	require.Len(t, h.Removes, 1)
+	assert.Equal(t, "x-del", h.Removes[0])
 }
 
 // -- FakeBodyBuffer --
 
 func TestFakeBodyBuffer_GetChunks_Empty(t *testing.T) {
 	b := fake.NewFakeBodyBuffer(nil)
-	if chunks := b.GetChunks(); chunks != nil {
-		t.Fatalf("expected nil chunks for empty body, got %v", chunks)
-	}
+	assert.Nil(t, b.GetChunks())
 }
 
 func TestFakeBodyBuffer_GetChunks(t *testing.T) {
 	b := fake.NewFakeBodyBuffer([]byte("hello"))
 	chunks := b.GetChunks()
-	if len(chunks) != 1 {
-		t.Fatalf("expected 1 chunk, got %d", len(chunks))
-	}
-	if got := string(chunks[0].ToUnsafeBytes()); got != "hello" {
-		t.Fatalf("got %q, want %q", got, "hello")
-	}
+	require.Len(t, chunks, 1)
+	assert.Equal(t, "hello", string(chunks[0].ToUnsafeBytes()))
 }
 
 func TestFakeBodyBuffer_GetSize(t *testing.T) {
 	b := fake.NewFakeBodyBuffer([]byte("hello"))
-	if got := b.GetSize(); got != 5 {
-		t.Fatalf("got %d, want 5", got)
-	}
+	assert.Equal(t, uint64(5), b.GetSize())
 }
 
 func TestFakeBodyBuffer_Drain_Partial(t *testing.T) {
 	b := fake.NewFakeBodyBuffer([]byte("hello"))
 	b.Drain(3)
-	if got := string(b.Body); got != "lo" {
-		t.Fatalf("after Drain(3): got %q, want %q", got, "lo")
-	}
+	assert.Equal(t, "lo", string(b.Body))
 }
 
 func TestFakeBodyBuffer_Drain_All(t *testing.T) {
 	b := fake.NewFakeBodyBuffer([]byte("hello"))
 	b.Drain(10)
-	if len(b.Body) != 0 {
-		t.Fatalf("expected empty body after over-drain, got %q", b.Body)
-	}
+	assert.Empty(t, b.Body)
 }
 
 func TestFakeBodyBuffer_Append(t *testing.T) {
 	b := fake.NewFakeBodyBuffer([]byte("hello"))
 	b.Append([]byte(" world"))
-	if got := string(b.Body); got != "hello world" {
-		t.Fatalf("got %q, want %q", got, "hello world")
-	}
+	assert.Equal(t, "hello world", string(b.Body))
 }

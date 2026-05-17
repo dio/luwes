@@ -3,45 +3,57 @@ package e2e
 import (
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/suite"
 )
 
-func TestHeaderAuth_Accept(t *testing.T) {
-	req, _ := http.NewRequest("GET", envoyAddr+"/", nil)
+type HeaderAuthSuite struct {
+	suite.Suite
+}
+
+func TestHeaderAuth(t *testing.T) {
+	suite.Run(t, new(HeaderAuthSuite))
+}
+
+func (s *HeaderAuthSuite) TestAccept() {
+	req, _ := http.NewRequest(http.MethodGet, envoyAddr+"/", nil)
 	req.Header.Set("x-api-key", "secret-key-abc")
 
-	resp := mustDo(t, req)
+	resp := mustDo(s.T(), req)
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
+	s.Equal(http.StatusOK, resp.StatusCode)
 }
 
-func TestHeaderAuth_Reject_MissingKey(t *testing.T) {
-	req, _ := http.NewRequest("GET", envoyAddr+"/", nil)
+func (s *HeaderAuthSuite) TestReject_MissingKey() {
+	req, _ := http.NewRequest(http.MethodGet, envoyAddr+"/", nil)
 
-	resp := mustDo(t, req)
-	body := readBody(t, resp)
+	resp := mustDo(s.T(), req)
+	body := readBody(s.T(), resp)
 
-	if resp.StatusCode != 401 {
-		t.Fatalf("expected 401, got %d (body: %s)", resp.StatusCode, body)
-	}
-	if body != `{"error":"missing x-api-key"}` {
-		t.Fatalf("unexpected body: %s", body)
-	}
+	s.Equal(http.StatusUnauthorized, resp.StatusCode)
+	s.Equal(`{"error":"missing x-api-key"}`, body)
 }
 
-func TestHeaderAuth_UserIDInjected(t *testing.T) {
-	// The filter injects x-user-id = value of x-api-key.
-	// The direct_response doesn't echo headers, but we can verify the 200
-	// (meaning the filter continued rather than rejected).
-	req, _ := http.NewRequest("GET", envoyAddr+"/", nil)
+func (s *HeaderAuthSuite) TestAccept_UserIDInjected() {
+	// The filter continues (200) when the key is present, meaning x-user-id was
+	// injected. The direct_response backend doesn't echo headers but a 200
+	// confirms the filter did not reject.
+	req, _ := http.NewRequest(http.MethodGet, envoyAddr+"/", nil)
 	req.Header.Set("x-api-key", "user-token-xyz")
 
-	resp := mustDo(t, req)
+	resp := mustDo(s.T(), req)
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *HeaderAuthSuite) TestReject_EmptyKey() {
+	req, _ := http.NewRequest(http.MethodGet, envoyAddr+"/", nil)
+	req.Header.Set("x-api-key", "")
+
+	resp := mustDo(s.T(), req)
+	defer resp.Body.Close()
+
+	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
