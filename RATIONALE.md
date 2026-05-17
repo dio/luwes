@@ -19,7 +19,7 @@ BenchmarkHeaderAuthAccept-8    9_441_203    118 ns/op    96 B/op    1 allocs/op
 One allocation per request, on every worker thread, for every filter that reads
 a single header. At 50k RPS that is 50k allocations per second, per worker
 thread, for the simplest possible auth check. The GC pressure is not
-theoretical -- it shows up in p99 latency under sustained load.
+theoretical: it shows up in p99 latency under sustained load.
 
 The allocation is not accidental. In `abi_impl/internal.go`, every header read
 goes through `getSingleHeader`, which constructs a `valueView` struct and takes
@@ -34,9 +34,8 @@ func (m *dymHeaderMap) Get(key string) ([]string, bool) {
 ```
 
 Go pins heap objects for CGO calls. It does not pin stack objects. Any local
-whose address crosses a CGO call escapes to the heap by design -- this is a
-CGO runtime constraint, not a compiler missed optimization. Stack scratch does
-not work here.
+whose address crosses a CGO call escapes to the heap by design: a CGO runtime
+constraint, not a compiler missed optimization. Stack scratch does not work here.
 
 The handle itself also allocates on every request. The upstream SDK creates a
 new `dymHttpFilterHandle` in `on_http_filter_init`, which fires once per
@@ -59,17 +58,25 @@ Two changes drive this:
 **Handle pool.** `dymHttpFilterHandle` structs are pooled via `sync.Pool`.
 `on_http_filter_init` pulls a handle from the pool and resets it.
 `on_http_filter_destroy` returns it. The pool return is in `destroy`, not
-`stream_complete` -- Envoy can fire `destroy` after `stream_complete`, and a
+`stream_complete`: Envoy can fire `destroy` after `stream_complete`, and a
 handle returned in `stream_complete` can be reassigned before `destroy` fires,
 causing use-after-free. The `reset()` method has `BUG:` panic assertions that
 catch any violation of this contract in testing.
 
-**`GetOne` nil miss.** The upstream `Get` returns `([]string, bool)`, which
-requires a slice header allocation even for a miss. `GetOne` returns
-`(UnsafeEnvoyBuffer, bool)` -- a value type. No allocation on miss. On hit, the
-`valueView` CGO escape still applies (structural, unfixable at the Go layer
-without an ABI change), but the common auth pattern -- check one key, reject or
-continue -- now allocates zero on the accept path.
+**`GetOneInto`.** The upstream `Get` returns `([]string, bool)`, requiring a
+slice header allocation even for a miss. `GetOneInto(key string, out *UnsafeEnvoyBuffer) bool`
+writes the result into a caller-provided buffer. The caller declares
+`var key shared.UnsafeEnvoyBuffer`, which the compiler stack-allocates (its
+address stays in Go-managed space and never crosses the CGO boundary as a
+local). The cast to `*C.envoy_dynamic_module_type_envoy_buffer` via
+`unsafe.Pointer` is valid: both structs are 16 bytes, `ptr` at offset 0,
+`length` at offset 8.
+
+```
+BenchmarkGetOneInto   0 B/op   0 allocs/op   ~17 ns/op
+```
+
+The 98.90% `getSingleHeader` bar in the flamegraph is gone.
 
 ## Why Not Upstream PR
 
@@ -81,28 +88,6 @@ contract, and a timeline tied to Envoy releases.
 luwes ships now, works with the current ABI (`abi/VERSION` pins the commit),
 and can be consumed by changing one import in `go.mod`. If and when the
 upstream SDK adopts these changes, migrating back is the same one-line edit.
-
-## The Remaining Allocation
-
-After the handle pool and `GetOne`, one allocation source remained: the
-`&valueView` CGO escape inside `getSingleHeader`. A real flamegraph from 500k
-requests under Envoy 1.38.0 showed this as 98.90% of all allocations. It is
-structural -- inherent to how Go pinning works across CGO boundaries.
-
-`GetOneInto(key string, out *UnsafeEnvoyBuffer) bool` eliminates it. The
-caller provides the destination buffer; the compiler can stack-allocate it at
-the call site because its address never crosses the CGO boundary as a local.
-Instead, `out` is cast to `*C.envoy_dynamic_module_type_envoy_buffer` via
-`unsafe.Pointer`. The cast is safe: both structs are 16 bytes with `ptr` at
-offset 0 and `length` at offset 8 -- verified at build time.
-
-The net result on the accept path with `GetOneInto`:
-
-```
-BenchmarkGetOneInto   0 B/op   0 allocs/op   ~17 ns/op
-```
-
-The 98.90% in the flamegraph is gone.
 
 ## ABI Vendoring
 
@@ -116,7 +101,7 @@ header and `VERSION` atomically. `make check-abi-drift` (and the weekly
 ## Module Isolation
 
 `tools/go.mod` pins `golangci-lint` via the Go 1.24 `tool` directive. It is
-not in `go.work` -- golangci-lint's 200+ transitive dependencies must not
+not in `go.work`: golangci-lint's 200+ transitive dependencies must not
 appear in the main module's build graph. Invoked as:
 
 ```

@@ -38,7 +38,7 @@ type SilentHeaderMap struct {
 
 // Set updates in place without recording the mutation.
 func (h *SilentHeaderMap) Set(key, value string) {
-	lower := strings.ToLower(key)
+	lower := asciiToLower(key)
 	existing := h.headers[lower]
 	if cap(existing) > 0 {
 		h.headers[lower] = existing[:1]
@@ -50,8 +50,19 @@ func (h *SilentHeaderMap) Set(key, value string) {
 
 // Add updates in place without recording the mutation.
 func (h *SilentHeaderMap) Add(key, value string) {
-	lower := strings.ToLower(key)
-	h.headers[lower] = append(h.headers[lower], value)
+	h.headers[asciiToLower(key)] = append(h.headers[asciiToLower(key)], value)
+}
+
+// asciiToLower is a zero-allocation lowercase for pure-ASCII HTTP header keys.
+// Falls back to strings.ToLower for non-ASCII (which allocates but is rare).
+func asciiToLower(s string) string {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			return strings.ToLower(s)
+		}
+	}
+	return s
 }
 
 // -- compile-time interface checks --

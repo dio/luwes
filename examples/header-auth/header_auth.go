@@ -51,7 +51,7 @@ func (f *Factory) OnDestroy() {}
 // OnRequestHeaders is the hot path. GetOneInto: zero allocs, caller-owned buffer.
 func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
 	var key shared.UnsafeEnvoyBuffer
-	if !headers.GetOneInto("x-api-key", &key) {
+	if !headers.GetOneInto("x-api-key", &key) || key.Len == 0 {
 		f.handle.SendLocalResponse(401, nil, []byte(`{"error":"missing x-api-key"}`), "auth")
 		return shared.HeadersStatusStop
 	}

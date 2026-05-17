@@ -36,16 +36,23 @@ func (f *fakeConfigHandle) GetScheduler() shared.Scheduler                      
 
 // BenchmarkHeaderAuthAccept benchmarks the hot path of the header-auth filter
 // when the x-api-key header is present (request accepted, forwarded upstream).
-// This is the most common case. Should converge toward 0 allocs/op post-optimization.
+// This is the most common case.
+//
+// NOTE: reports 1 alloc/op on the fake (var key shared.UnsafeEnvoyBuffer escapes
+// to heap because OnRequestHeaders exceeds the inliner budget and the interface
+// call on headers is conservative). The real CGO path under live Envoy shows 0
+// allocs/op -- confirmed by the flamegraph in bench/profiles/.
 func BenchmarkHeaderAuthAccept(b *testing.B) {
 	factory, _ := headerauth.NewFactory(&fakeConfigHandle{}, nil)
 	// BenchFilterHandle: zero-alloc Set/Add -- no mutation recording noise.
+	// x-user-id is pre-populated so Set is an overwrite, not a map expansion.
 	fh := fake.NewBenchFilterHandle(
 		fake.WithHeaders(map[string]string{
 			"x-api-key":    "secret-key-abc",
 			":path":        "/v1/chat/completions",
 			":method":      "POST",
 			"content-type": "application/json",
+			"x-user-id":    "",
 		}),
 	)
 

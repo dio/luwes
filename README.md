@@ -4,9 +4,9 @@
 [![Coverage Status](https://coveralls.io/repos/github/dio/luwes/badge.svg?branch=main)](https://coveralls.io/github/dio/luwes?branch=main)
 
 > **On the coverage number:** the badge only counts packages testable without
-> a live Envoy process. `abi_impl` -- the CGO layer that backs every header,
-> body, span, and scheduler call -- can't run without the Envoy ABI loaded, so
-> it's excluded from unit tests and pulled down the total. That code gets
+> a live Envoy process. `abi_impl` (the CGO layer that backs every header,
+> body, span, and scheduler call) can't run without the Envoy ABI loaded, so
+> it's excluded from unit tests and pulls down the total. That code gets
 > exercised by the e2e suite against a real Envoy binary in CI.
 > Unit-testable package breakdown: hello 100%, utility 69%, header-auth 67%,
 > shared/fake 32%, root registry 26%.
@@ -93,7 +93,7 @@ BenchmarkHeaderAuthAccept   0 B/op   0 allocs/op   ~64 ns/op
 ```
 
 `dymHttpFilterHandle` structs are pooled via `sync.Pool`. Pool return is in
-`on_http_filter_destroy` -- the guaranteed-last callback -- not in
+`on_http_filter_destroy` (the guaranteed-last callback), not in
 `stream_complete`, which can race with `destroy`. The flamegraph collapses
 handle allocation to 0.94% (GC evictions only).
 
@@ -130,24 +130,24 @@ proportional to allocation count. Hover to see stack frames and counts.
 
 **Before (upstream SDK)**
 
-`getSingleHeader` owns a wide bar at 98.90% -- every `GetOne` call forces
-a `var valueView C.envoy_dynamic_module_type_envoy_buffer` local onto the heap
-because its address crosses the CGO boundary (`&valueView` passed to C). The
-Go runtime cannot prove C won't store the pointer, so it pins it on the heap.
-There is no way to avoid this with the current return-by-value API.
+`getSingleHeader` owns a wide bar at 98.90%. Every `GetOne` call forces
+`var valueView C.envoy_dynamic_module_type_envoy_buffer` onto the heap
+because its address crosses the CGO boundary. The Go runtime cannot prove C
+won't store the pointer, so it pins it on the heap. There is no way around
+this with the current return-by-value API.
 
 ![baseline flamegraph](bench/profiles/flamegraph_baseline.svg)
 
 **After (luwes + GetOneInto)**
 
 `getSingleHeader` is gone from the top. `GetOneInto` hands the C function a
-pointer to a caller-owned buffer. The caller declares `var key shared.UnsafeEnvoyBuffer`
-which the compiler stack-allocates (its address stays in Go-managed space, never
-escapes). The cast to `*C.envoy_dynamic_module_type_envoy_buffer` via `unsafe.Pointer`
-is valid because both structs share the same layout: 16 bytes, `ptr` at offset 0,
-`length` at offset 8.
+pointer to a caller-owned buffer. The caller declares `var key shared.UnsafeEnvoyBuffer`,
+which the compiler stack-allocates (its address stays in Go-managed space and
+never escapes). The cast to `*C.envoy_dynamic_module_type_envoy_buffer` via
+`unsafe.Pointer` is valid because both structs share the same layout: 16 bytes,
+`ptr` at offset 0, `length` at offset 8.
 
-What remains (the thin bars) is `(*Filter).OnRequestHeaders` -- the
+What remains (the thin bars) is `(*Filter).OnRequestHeaders`: the
 `RequestHeaders().Set("x-user-id", ...)` call, which allocates a new header
 string. That is expected and unavoidable without a mutation API that writes
 directly into Envoy's header table.
