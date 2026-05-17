@@ -17,7 +17,7 @@ Zero-allocation Go SDK for Envoy dynamic modules. Drop-in replacement for
 If you want a higher-level handler API with familiar Go types (`Request`,
 `Writer`, `Header`), pooled per-request state, and built-in body buffering
 and response observation, see [sahl](sahl/): the ergonomic layer built on
-top of luwes.
+top of luwes. See [sahl/RATIONALE.md](sahl/RATIONALE.md) for why it exists.
 
 See [RATIONALE.md](RATIONALE.md) for why this exists.
 
@@ -123,7 +123,8 @@ observation, and per-listener factory isolation.
 | [sahl/spa](examples/sahl/spa/) | Embedded SPA (`//go:embed`) + JSON API handler, two filters in one .so |
 
 See [sahl/README.md](sahl/README.md) for the full API reference including the
-registration function comparison table and factory design.
+registration function comparison table and factory design. See
+[sahl/RATIONALE.md](sahl/RATIONALE.md) for why the layer exists.
 
 ## Development
 
