@@ -21,7 +21,7 @@ ZIG_URL := https://ziglang.org/download/$(ZIG_VERSION)/zig-$(_ARCH)-$(ZIG_OS)-$(
 # Envoy download URL (archive.tetratelabs.io)
 # Supports: darwin-arm64, darwin-amd64, linux-amd64, linux-arm64
 ENVOY_ARCHIVE_OS   := $(if $(filter darwin,$(_OS)),darwin,linux)
-ENVOY_ARCHIVE_ARCH := $(shell uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')
+ENVOY_ARCHIVE_ARCH := $(shell go env GOARCH)
 ENVOY_URL := https://archive.tetratelabs.io/envoy/download/v$(ENVOY_VERSION)/envoy-v$(ENVOY_VERSION)-$(ENVOY_ARCHIVE_OS)-$(ENVOY_ARCHIVE_ARCH).tar.xz
 
 .PHONY: all
