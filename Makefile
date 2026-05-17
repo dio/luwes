@@ -1,7 +1,7 @@
 GO_TOOL := GOWORK=off go tool -modfile=tools/go.mod
 
 ZIG_VERSION   := 0.16.0
-ZIG_BIN       := $(CURDIR)/.bin/zig
+ZIG_BIN       := $(CURDIR)/.bin/zig-dist/zig
 
 ENVOY_VERSION := 1.38.0
 ENVOY_BIN     := $(CURDIR)/.bin/envoy
@@ -29,9 +29,9 @@ all: build
 
 # Download zig on demand
 $(ZIG_BIN):
-	@mkdir -p .bin
+	@mkdir -p .bin/zig-dist
 	@echo "Downloading zig $(ZIG_VERSION)..."
-	@curl -fsSL "$(ZIG_URL)" | tar -xJ --strip-components=1 -C .bin
+	@curl -fsSL "$(ZIG_URL)" | tar -xJ --strip-components=1 -C .bin/zig-dist
 	@echo "Zig ready: $@"
 
 # Download envoy on demand
