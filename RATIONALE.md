@@ -63,14 +63,62 @@ handle returned in `stream_complete` can be reassigned before `destroy` fires,
 causing use-after-free. The `reset()` method has `BUG:` panic assertions that
 catch any violation of this contract in testing.
 
-**`GetOneInto`.** The upstream `Get` returns `([]string, bool)`, requiring a
-slice header allocation even for a miss. `GetOneInto(key string, out *UnsafeEnvoyBuffer) bool`
-writes the result into a caller-provided buffer. The caller declares
-`var key shared.UnsafeEnvoyBuffer`, which the compiler stack-allocates (its
-address stays in Go-managed space and never crosses the CGO boundary as a
-local). The cast to `*C.envoy_dynamic_module_type_envoy_buffer` via
-`unsafe.Pointer` is valid: both structs are 16 bytes, `ptr` at offset 0,
-`length` at offset 8.
+**`GetOne` and the CGO escape.** The upstream SDK's `Get` returns `([]string, bool)`,
+allocating a slice header even on a miss. luwes introduces `GetOne(key string) UnsafeEnvoyBuffer`,
+which returns a value type with no allocation on a miss. But on a hit, `GetOne` still
+allocates. Here is why:
+
+```go
+func (h *dymHeaderMap) getSingleHeader(key string, ...) shared.UnsafeEnvoyBuffer {
+    var valueView C.envoy_dynamic_module_type_envoy_buffer
+    C.envoy_dynamic_module_callback_http_get_header(..., &valueView, ...)
+    //                                                   ^^^^^^^^^
+    //  &valueView crosses the CGO boundary.
+    //  Go must pin valueView on the heap so the GC can track it.
+    //  Stack objects cannot be pinned. Escape is mandatory.
+    ...
+}
+```
+
+Go pins heap objects for CGO calls because the GC needs to know where every
+pointer is. Stack objects are not tracked by the GC and cannot be pinned. Any
+local whose address is passed to a C function therefore escapes to the heap.
+This is a runtime constraint, not a compiler oversight. There is no way to
+make `GetOne` allocate-free while keeping the return-by-value API.
+
+**`GetOneInto` and why it works.** `GetOneInto(key string, out *UnsafeEnvoyBuffer) bool`
+shifts ownership of the buffer to the caller:
+
+```go
+var key shared.UnsafeEnvoyBuffer        // declared at the call site
+headers.GetOneInto("x-api-key", &key)  // &key passed to GetOneInto
+```
+
+Inside `GetOneInto`, `out` is cast to `*C.envoy_dynamic_module_type_envoy_buffer`
+via `unsafe.Pointer` and passed directly to C. The cast is safe because both
+structs have identical memory layouts: 16 bytes, `ptr` at offset 0, `length`
+at offset 8 (verified at build time).
+
+The compiler can now stack-allocate `key` at the call site. `&key` is passed
+into Go code (`GetOneInto`), not directly into C; the CGO call receives a
+cast of the already-pinned value, which the compiler handles without a heap
+allocation. The escape analysis sees `key`'s address staying within Go-managed
+frames and keeps it on the stack.
+
+The result: the `getSingleHeader` bar that dominated 98.90% of the baseline
+flamegraph disappears entirely.
+
+Migration from `GetOne`:
+
+```go
+// before
+key := headers.GetOne("x-api-key")
+if key.Ptr == nil || key.Len == 0 { ... }
+
+// after
+var key shared.UnsafeEnvoyBuffer
+if !headers.GetOneInto("x-api-key", &key) || key.Len == 0 { ... }
+```
 
 ```
 BenchmarkGetOneInto   0 B/op   0 allocs/op   ~17 ns/op
