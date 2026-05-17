@@ -21,6 +21,7 @@ FLOORS = {
     "github.com/dio/luwes":                              20,
     "github.com/dio/luwes/examples/header-auth":         60,
     "github.com/dio/luwes/examples/hello":               90,
+    "github.com/dio/luwes/examples/sahl/auth":           90,
     "github.com/dio/luwes/examples/sahl/decoder":        45,
     "github.com/dio/luwes/examples/sahl/header-auth":    90,
     "github.com/dio/luwes/examples/sahl/spa":            90,
