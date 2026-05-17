@@ -37,6 +37,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: examples/sahl/spa/ui/package-lock.json
+
+      - name: build spa ui
+        run: make build-spa-ui
       - run: make format-check
       - run: make lint
 
@@ -291,7 +299,12 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: examples/sahl/spa/e2e/package-lock.json
+          cache-dependency-path: |
+            examples/sahl/spa/ui/package-lock.json
+            examples/sahl/spa/e2e/package-lock.json
+
+      - name: build spa ui
+        run: make build-spa-ui
 
       - name: cache zig
         id: cache-zig
@@ -343,6 +356,15 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: examples/sahl/spa/ui/package-lock.json
+
+      - name: build spa ui
+        run: make build-spa-ui
 
       - name: cache zig
         id: cache-zig
