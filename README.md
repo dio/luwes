@@ -159,9 +159,14 @@ directly into Envoy's header table.
 | Benchmark | upstream SDK | luwes |
 |-----------|-------------|-------|
 | HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
-| GetOne (hit) | 1 alloc/op | 0 allocs/op |
+| GetOne (hit) | 1 alloc/op | 1 alloc/op |
 | GetOneInto (hit) | n/a | **0 allocs/op** |
 | GetAll (10 headers) | 2 allocs/op | 1 alloc/op |
+
+`GetOne` allocates on the real CGO path in both SDKs: `&valueView` escapes to the
+heap at the CGO boundary regardless. `GetOneInto` eliminates it by letting the caller
+own the buffer. The fake benchmark shows 0 for `GetOne` in luwes because there is no
+CGO boundary on the fake path; the flamegraph is the ground truth.
 
 ## ABI
 
