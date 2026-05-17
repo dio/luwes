@@ -56,6 +56,20 @@ func WithReceivedResponseBody(body []byte) FilterHandleOption {
 	}
 }
 
+// WithActiveSpan sets the active tracing span returned by GetActiveSpan.
+func WithActiveSpan(span shared.Span) FilterHandleOption {
+	return func(h *FakeFilterHandle) {
+		h.activeSpan = span
+	}
+}
+
+// WithLogEnabled sets whether LogEnabled returns true for all log levels.
+func WithLogEnabled(enabled bool) FilterHandleOption {
+	return func(h *FakeFilterHandle) {
+		h.logEnabled = enabled
+	}
+}
+
 // NewFilterHandle constructs a FakeFilterHandle with the given options.
 func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 	h := &FakeFilterHandle{
@@ -89,6 +103,8 @@ type FakeFilterHandle struct {
 	bufferedReq      bool
 	bufferedResp     bool
 	metadata         map[string]map[string]any
+	activeSpan       shared.Span
+	logEnabled       bool
 
 	// Recorded side effects for assertions.
 	LocalResponses    []LocalResponse
@@ -248,7 +264,7 @@ func (h *FakeFilterHandle) GetMostSpecificConfig() any { return nil }
 // -- Logging --
 
 func (h *FakeFilterHandle) Log(_ shared.LogLevel, _ string, _ ...any) {}
-func (h *FakeFilterHandle) LogEnabled(_ shared.LogLevel) bool         { return false }
+func (h *FakeFilterHandle) LogEnabled(_ shared.LogLevel) bool         { return h.logEnabled }
 
 // -- Scheduler (no-op; use e2e tests for async behaviour) --
 
@@ -301,7 +317,7 @@ func (h *FakeFilterHandle) AddCustomFlag(_ string)     {}
 func (h *FakeFilterHandle) GetWorkerIndex() uint32     { return 0 }
 func (h *FakeFilterHandle) GetBufferLimit() uint64     { return 0 }
 func (h *FakeFilterHandle) SetBufferLimit(_ uint64)    {}
-func (h *FakeFilterHandle) GetActiveSpan() shared.Span { return nil }
+func (h *FakeFilterHandle) GetActiveSpan() shared.Span { return h.activeSpan }
 func (h *FakeFilterHandle) GetClusterName() (shared.UnsafeEnvoyBuffer, bool) {
 	return shared.UnsafeEnvoyBuffer{}, false
 }

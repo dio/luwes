@@ -406,6 +406,42 @@ func TestSocketOptions_NoOps(t *testing.T) {
 
 // -- bench_handle --
 
+func TestWithActiveSpan(t *testing.T) {
+	span := &fakeSpanStub{}
+	h := NewFilterHandle(WithActiveSpan(span))
+	assert.Equal(t, span, h.GetActiveSpan())
+}
+
+func TestWithLogEnabled(t *testing.T) {
+	h := NewFilterHandle(WithLogEnabled(true))
+	assert.True(t, h.LogEnabled(shared.LogLevelDebug))
+	assert.True(t, h.LogEnabled(shared.LogLevelInfo))
+}
+
+func TestWithLogEnabled_Default_False(t *testing.T) {
+	h := NewFilterHandle()
+	assert.False(t, h.LogEnabled(shared.LogLevelInfo))
+}
+
+// fakeSpanStub satisfies shared.Span for option tests.
+type fakeSpanStub struct{}
+
+func (s *fakeSpanStub) SetTag(_, _ string)    {}
+func (s *fakeSpanStub) SetOperation(_ string) {}
+func (s *fakeSpanStub) Log(_ string)          {}
+func (s *fakeSpanStub) SetSampled(_ bool)     {}
+func (s *fakeSpanStub) GetBaggage(_ string) (shared.UnsafeEnvoyBuffer, bool) {
+	return shared.UnsafeEnvoyBuffer{}, false
+}
+func (s *fakeSpanStub) SetBaggage(_, _ string) {}
+func (s *fakeSpanStub) GetTraceID() (shared.UnsafeEnvoyBuffer, bool) {
+	return shared.UnsafeEnvoyBuffer{}, false
+}
+func (s *fakeSpanStub) GetSpanID() (shared.UnsafeEnvoyBuffer, bool) {
+	return shared.UnsafeEnvoyBuffer{}, false
+}
+func (s *fakeSpanStub) SpawnChild(_ string) shared.ChildSpan { return nil }
+
 func TestNewBenchFilterHandle(t *testing.T) {
 	bh := NewBenchFilterHandle()
 	require.NotNil(t, bh)
