@@ -25,6 +25,9 @@ func WithResponseHeaders(headers map[string]string) FilterHandleOption {
 func WithRequestBody(body []byte) FilterHandleOption {
 	return func(h *FakeFilterHandle) {
 		h.reqBody = NewFakeBodyBuffer(body)
+		// Mark as buffered so readBody does not double-read from BufferedRequestBody
+		// and ReceivedRequestBody (which are the same fake backing store).
+		h.bufferedReq = true
 	}
 }
 
@@ -103,6 +106,13 @@ func (h *FakeFilterHandle) ResponseTrailers() shared.HeaderMap {
 
 func (h *FakeFilterHandle) BufferedRequestBody() shared.BodyBuffer  { return h.reqBody }
 func (h *FakeFilterHandle) ReceivedRequestBody() shared.BodyBuffer  { return h.reqBody }
+
+// SetRequestBody replaces the request body on the handle. For use in tests
+// that need to set the body after construction (e.g. body-aware filter tests
+// where OnRequestHeaders is called before the body is available).
+func (h *FakeFilterHandle) SetRequestBody(body []byte) {
+	h.reqBody = NewFakeBodyBuffer(body)
+}
 func (h *FakeFilterHandle) BufferedResponseBody() shared.BodyBuffer { return h.respBody }
 func (h *FakeFilterHandle) ReceivedResponseBody() shared.BodyBuffer { return h.respBody }
 func (h *FakeFilterHandle) ReceivedBufferedRequestBody() bool       { return h.bufferedReq }

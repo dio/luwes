@@ -102,6 +102,10 @@ type filterDef struct {
 	factoryFn  HandlerFactory
 	handler    HandlerFunc
 	responseFn ResponseHandlerFunc
+	// bodyAware: if true, handler fires at OnRequestBody(endStream=true)
+	// instead of OnRequestHeaders. The body is available via r.Body().
+	// OnRequestHeaders returns Continue immediately (no early mutations).
+	bodyAware bool
 }
 
 // Register registers a synchronous filter handler by name.
@@ -132,6 +136,29 @@ func RegisterWithResponse(name string, h HandlerFunc, resp ResponseHandlerFunc) 
 // a response observer.
 func RegisterWithConfigAndResponse(name string, configFn ConfigFunc, h HandlerFunc, resp ResponseHandlerFunc) {
 	mustAdd(name, &filterDef{configFn: configFn, handler: h, responseFn: resp})
+}
+
+// RegisterWithBody registers a body-aware filter. The handler is called once
+// the full request body is buffered (at OnRequestBody with endStream=true),
+// not at OnRequestHeaders. Use this for filters that need to read the request
+// body before making routing decisions (e.g. model-based routing from JSON).
+//
+// The handler receives the complete body via r.Body(). Mutations queued on w
+// (SetRequestHeader, ClearRouteCache, IncrementCounter, etc.) are applied
+// after the handler returns, then ContinueRequest is called to forward upstream.
+func RegisterWithBody(name string, h HandlerFunc) {
+	mustAdd(name, &filterDef{handler: h, bodyAware: true})
+}
+
+// RegisterWithBodyConfigAndResponse is the full-featured variant: body-aware
+// request handler, config setup, and response observer.
+func RegisterWithBodyConfigAndResponse(name string, configFn ConfigFunc, h HandlerFunc, resp ResponseHandlerFunc) {
+	mustAdd(name, &filterDef{configFn: configFn, handler: h, responseFn: resp, bodyAware: true})
+}
+
+// RegisterWithBodyAndResponse is like RegisterWithBody with a response observer.
+func RegisterWithBodyAndResponse(name string, h HandlerFunc, resp ResponseHandlerFunc) {
+	mustAdd(name, &filterDef{handler: h, responseFn: resp, bodyAware: true})
 }
 
 // RegisterFactory registers a filter using a factory function that returns a

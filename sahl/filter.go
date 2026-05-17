@@ -28,6 +28,7 @@ func (f *configFactory) Create(
 	def := &filterDef{
 		handler:    f.def.handler,
 		responseFn: f.def.responseFn,
+		bodyAware:  f.def.bodyAware,
 	}
 
 	switch {
@@ -131,6 +132,12 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 	w := getWriter(f.handle, scheduler)
 	f.writer = w
 
+	// Body-aware filters defer handler execution to OnRequestBody(endStream=true).
+	// Return Stop here so Envoy buffers the body; handler runs when body is ready.
+	if f.handler.bodyAware {
+		return shared.HeadersStatusStopAllAndBuffer
+	}
+
 	// Run the request handler synchronously on the worker thread.
 	f.handler.handler(w, req)
 
@@ -153,6 +160,15 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 func (f *sahlFilter) OnRequestBody(body shared.BodyBuffer, endStream bool) shared.BodyStatus {
 	if endStream {
 		f.bodyDone = true
+	}
+	if f.handler.bodyAware && endStream {
+		// Body is fully buffered. Run the handler now, then continue upstream.
+		f.handler.handler(f.writer, f.req)
+		if !f.writer.responded {
+			f.writer.flush(false)
+			return shared.BodyStatusContinue
+		}
+		return shared.BodyStatusContinue
 	}
 	return shared.BodyStatusStopAndBuffer
 }
