@@ -82,7 +82,7 @@ luwes ships now, works with the current ABI (`abi/VERSION` pins the commit),
 and can be consumed by changing one import in `go.mod`. If and when the
 upstream SDK adopts these changes, migrating back is the same one-line edit.
 
-## Why Not jisr
+## luwes vs jisr
 
 jisr is a middleware abstraction. It copies headers into Go-owned memory,
 spawns a goroutine per request, and presents a `net/http`-style handler
