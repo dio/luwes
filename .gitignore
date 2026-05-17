@@ -10,3 +10,7 @@ e2e/*.so
 bench/bench.test
 bench/*.prof
 bench.test
+
+# spa example
+examples/sahl/spa/ui/node_modules/
+examples/sahl/spa/ui/.vite/

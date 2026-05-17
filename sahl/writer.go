@@ -14,9 +14,10 @@ type Writer struct {
 	scheduler shared.Scheduler // acquired once in OnRequestHeaders, used in Go()
 
 	// queued mutations: slices retain capacity across pool reuse
-	reqMuts     []headerMut
-	metaMuts    []metaMut
-	counterMuts []counterMut
+	reqMuts      []headerMut
+	respHdrMuts  []headerMut // response headers sent with SendBytes/Send
+	metaMuts     []metaMut
+	counterMuts  []counterMut
 
 	responded    bool // Send/SendBytes was called
 	routeCleared bool
@@ -32,6 +33,7 @@ type metaMut struct {
 	namespace, key string
 	value          any
 }
+
 type counterMut struct {
 	id   shared.MetricID
 	n    uint64
@@ -55,6 +57,7 @@ func (w *Writer) reset(handle shared.HttpFilterHandle, scheduler shared.Schedule
 	w.handle = handle
 	w.scheduler = scheduler
 	w.reqMuts = w.reqMuts[:0]
+	w.respHdrMuts = w.respHdrMuts[:0]
 	w.metaMuts = w.metaMuts[:0]
 	w.counterMuts = w.counterMuts[:0]
 	w.responded = false
@@ -72,12 +75,30 @@ func (w *Writer) Send(statusCode int, body string) {
 }
 
 // SendBytes is like Send but accepts a pre-encoded byte slice.
+// Response headers queued via SetResponseHeader are included.
 func (w *Writer) SendBytes(statusCode int, body []byte) {
 	if w.responded {
 		return
 	}
 	w.responded = true
-	w.handle.SendLocalResponse(uint32(statusCode), nil, body, "sahl")
+	var headers [][2]string
+	if len(w.respHdrMuts) > 0 {
+		headers = make([][2]string, len(w.respHdrMuts))
+		for i, m := range w.respHdrMuts {
+			headers[i] = [2]string{m.key, m.value}
+		}
+	}
+	w.handle.SendLocalResponse(uint32(statusCode), headers, body, "sahl")
+}
+
+// SetResponseHeader queues a response header to be included in the next
+// Send or SendBytes call. Has no effect after Send/SendBytes is called.
+// Use this to set content-type, cache-control, and other response headers
+// when serving assets directly from a filter (e.g. embedded SPA, API handler).
+func (w *Writer) SetResponseHeader(key, value string) {
+	if !w.responded {
+		w.respHdrMuts = append(w.respHdrMuts, headerMut{key, value})
+	}
 }
 
 // Log emits a message to Envoy's logger at the given level.
