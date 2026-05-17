@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/dio/luwes/examples/sahl/sse-tap/buffer"
+	"github.com/dio/luwes/buffer"
 	"github.com/dio/luwes/sahl"
 )
 

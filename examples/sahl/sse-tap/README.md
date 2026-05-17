@@ -13,7 +13,7 @@ The filter sits on the response path and processes streaming LLM responses:
 - Output tokens appear near the **end** (Anthropic `message_delta`, OpenAI final
   usage chunk).
 
-It uses `buffer.HeadTail` to capture the first 8 KB and last 64 KB of each
+It uses `buffer.HeadTail` from `github.com/dio/luwes/buffer` to capture the first 8 KB and last 64 KB of each
 response. The middle of a large response is never stored. On stream completion,
 it scans both regions to extract token counts and emits Envoy counters.
 
@@ -167,9 +167,9 @@ artifact as sahl request benchmarks).
 examples/sahl/sse-tap/
   sse_tap.go         filter + ExtractUsage (pure Go, testable without Envoy)
   sse_tap_test.go    unit tests + BenchmarkExtractUsage
-  buffer/
-    buffer.go        Ring and HeadTail types (zero-alloc after construction)
   cmd/main.go        wiring: register, abi_impl, sahl.Factories()
   envoy.yaml         Envoy config with cluster + access log metadata
   README.md          this file
+
+github.com/dio/luwes/buffer   Ring + HeadTail (shared with other luwes filters)
 ```
