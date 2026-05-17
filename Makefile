@@ -184,7 +184,7 @@ bench-profile:
 .PHONY: e2e
 e2e: $(ENVOY_BIN)
 	ENVOY_BIN=$(ENVOY_BIN) LUWES_SO=$(CURDIR)/dist/libheader-auth.so \
-	go test -C e2e -tags=e2e -v -timeout=60s -run TestHeaderAuth ./...
+	go test -C e2e -v -timeout=60s -run TestHeaderAuth ./...
 
 # Sync abi.h from envoy at a given commit
 # Usage: make sync-abi COMMIT=<hash>

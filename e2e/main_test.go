@@ -1,18 +1,21 @@
-//go:build e2e
-
 // Package e2e contains integration tests that run a real Envoy process
 // against filters compiled with luwes.
 //
 // Prerequisites:
-//   - Envoy binary: ~/.local/share/boe/envoy-versions/1.37.1/bin/envoy
-//   - CGO_ENABLED=1, zig in PATH (or .bin/zig from make)
+//   - Envoy binary at .bin/envoy (make .bin/envoy) or ENVOY_BIN env var
+//   - Compiled filter: make build-linux-amd64 EXAMPLE=header-auth (linux)
+//     or: make build EXAMPLE=header-auth (darwin, local dev)
 //
-// Build the .so and run:
+// Run:
 //
-//	cd .. && make build EXAMPLE=header-auth
-//	cd e2e && LUWES_SO=../dist/libheader-auth.so go test -tags=e2e -v -run TestHeaderAuth ./...
+//	make e2e
 //
-// The ENVOY_BIN env var overrides the default Envoy path.
+// Or manually:
+//
+//	ENVOY_BIN=.bin/envoy LUWES_SO=dist/libheader-auth.so \
+//	  go test -C e2e -v -timeout=60s -run TestHeaderAuth ./...
+//
+// Tests skip automatically when ENVOY_BIN or LUWES_SO are not present.
 package e2e
 
 import (
@@ -23,7 +26,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -35,29 +37,31 @@ const (
 )
 
 var (
-	projectRoot string
-	envoyCmd    *exec.Cmd
-	soPath      string
+	envoyCmd *exec.Cmd
+	soPath   string
 )
 
 func envoyBin() string {
 	if b := os.Getenv("ENVOY_BIN"); b != "" {
 		return b
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local/share/boe/envoy-versions/1.37.1/bin/envoy")
+	// Default: Makefile download location, one level up from e2e/.
+	return filepath.Join("..", ".bin", "envoy")
 }
 
 func TestMain(m *testing.M) {
-	_, file, _, _ := runtime.Caller(0)
-	projectRoot = filepath.Dir(file)
-
 	soPath = os.Getenv("LUWES_SO")
 	if soPath == "" {
-		soPath = filepath.Join(projectRoot, "..", "dist", "libheader-auth.so")
+		soPath = filepath.Join("..", "dist", "libheader-auth.so")
 	}
 	if _, err := os.Stat(soPath); err != nil {
 		fmt.Fprintf(os.Stderr, "SKIP: .so not found at %s -- run: make build EXAMPLE=header-auth\n", soPath)
+		os.Exit(0)
+	}
+
+	bin := envoyBin()
+	if _, err := os.Stat(bin); err != nil {
+		fmt.Fprintf(os.Stderr, "SKIP: envoy not found at %s -- run: make .bin/envoy\n", bin)
 		os.Exit(0)
 	}
 
@@ -65,7 +69,7 @@ func TestMain(m *testing.M) {
 	cfgPath := writeEnvoyConfig(soDir)
 	defer os.Remove(cfgPath)
 
-	envoyCmd = exec.Command(envoyBin(),
+	envoyCmd = exec.Command(bin,
 		"-c", cfgPath,
 		"--log-level", "warning",
 	)
@@ -108,7 +112,6 @@ func waitForEnvoy(addr string, timeout time.Duration) {
 
 // writeEnvoyConfig writes a minimal envoy.yaml to a temp file and returns its path.
 func writeEnvoyConfig(soDir string) string {
-	// Extract just the .so name without lib prefix and .so suffix for dynamic_module_config.name
 	base := filepath.Base(soPath)
 	base = strings.TrimPrefix(base, "lib")
 	base = strings.TrimSuffix(base, ".so")
