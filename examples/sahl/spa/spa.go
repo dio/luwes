@@ -51,6 +51,17 @@ var UIFS embed.FS
 var indexHTML []byte
 
 func init() {
+	// Two filters registered from the same init() — each mapped to a distinct
+	// filter_name in envoy.yaml. Both are compiled into the same .so file and
+	// share the embedded ui/dist filesystem, but their handlers, per-request
+	// pools, and lifecycle are completely independent.
+	//
+	// Envoy dispatches each request to the right handler via filter_name:
+	//   filter_name: api-backend  →  APIHandler  (handles /api/*, passes through rest)
+	//   filter_name: spa          →  SPAHandler  (serves assets, falls back to index.html)
+	//
+	// The chain order in envoy.yaml matters: api-backend runs first so it can
+	// short-circuit /api/* requests before they reach the spa filter.
 	sahl.Register("spa", SPAHandler)
 	sahl.Register("api-backend", sahl.Chain(APIHandler, apiLogMiddleware))
 }

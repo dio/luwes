@@ -1,0 +1,85 @@
+# Two listeners on different ports share the same auth.so but carry different
+# per-listener configs. This demonstrates RegisterFactory: each listener gets
+# its own AuthFilter instance with its own AllowedKeys set.
+#
+# Port 10000: admin listener (key-admin, key-ops allowed)
+# Port 10001: user listener  (key-user, key-guest allowed)
+#
+# Try:
+#   curl -H 'x-api-key: key-admin' localhost:10000/    # 200
+#   curl -H 'x-api-key: key-user'  localhost:10000/    # 401 invalid key
+#   curl -H 'x-api-key: key-user'  localhost:10001/    # 200
+#   curl -H 'x-api-key: key-admin' localhost:10001/    # 401 invalid key
+#   curl localhost:10000/                               # 401 missing key
+
+static_resources:
+  listeners:
+    - name: admin_listener
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10000 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: admin_ingress
+                http_filters:
+                  - name: auth
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: auth
+                      filter_name: auth
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{"allowed_keys":["key-admin","key-ops"],"header":"x-api-key","metadata_ns":"auth.admin"}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: admin
+                  virtual_hosts:
+                    - name: admin
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "admin ok\n" }
+
+    - name: user_listener
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10001 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: user_ingress
+                http_filters:
+                  - name: auth
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: auth
+                      filter_name: auth
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{"allowed_keys":["key-user","key-guest"],"header":"x-api-key","metadata_ns":"auth.user"}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: user
+                  virtual_hosts:
+                    - name: user
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "user ok\n" }
+
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
