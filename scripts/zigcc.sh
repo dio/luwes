@@ -12,7 +12,7 @@
 # TARGET env var sets the cross-compile target triple (default: x86_64-linux-gnu).
 set -euo pipefail
 
-ZIG="${ZIG:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.bin/zig}"
+ZIG="${ZIG:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.bin/zig-dist/zig}"
 TARGET="${TARGET:-x86_64-linux-gnu}"
 
 args=()
