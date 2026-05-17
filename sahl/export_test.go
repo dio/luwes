@@ -39,8 +39,20 @@ func NewFilterWithResponseForTest(name string, handler HandlerFunc, resp Respons
 	}
 }
 
+// NewBodyAwareFilterForTest constructs a sahlFilter with bodyAware=true for tests.
+func NewBodyAwareFilterForTest(name string, handler HandlerFunc, handle shared.HttpFilterHandle) *sahlFilter {
+	return &sahlFilter{
+		name:    name,
+		handler: &filterDef{handler: handler, bodyAware: true},
+		handle:  handle,
+	}
+}
+
 // Responded reports whether Send or SendBytes was called.
 func (w *Writer) Responded() bool { return w.responded }
+
+// ParseStatusForTest exposes parseStatus for unit tests.
+func ParseStatusForTest(s string) int { return parseStatus(s) }
 
 // FlushForTest applies queued mutations directly (without calling ContinueRequest).
 // For use in unit tests that check mutation state without a real Envoy scheduler.
