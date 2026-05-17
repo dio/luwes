@@ -391,6 +391,30 @@ func TestNewBenchFilterHandle(t *testing.T) {
 	require.NotNil(t, bh)
 	hm := bh.RequestHeaders()
 	require.NotNil(t, hm)
+	// RequestHeaders must return SilentHeaderMap, not FakeHeaderMap.
+	_, ok := hm.(*SilentHeaderMap)
+	assert.True(t, ok, "BenchFilterHandle.RequestHeaders must return *SilentHeaderMap")
+}
+
+func TestSilentHeaderMap_Set_OverwriteNoAlloc(t *testing.T) {
+	bh := NewBenchFilterHandle(WithHeaders(map[string]string{"x-user-id": "before"}))
+	hm := bh.RequestHeaders().(*SilentHeaderMap)
+
+	allocs := testing.AllocsPerRun(100, func() {
+		hm.Set("x-user-id", "after")
+	})
+	assert.Zero(t, allocs, "SilentHeaderMap.Set on existing key must not allocate")
+}
+
+func TestSilentHeaderMap_Set_NewKey(t *testing.T) {
+	bh := NewBenchFilterHandle()
+	hm := bh.RequestHeaders().(*SilentHeaderMap)
+	// First Set on a new key allocates once (the []string). Subsequent calls must not.
+	hm.Set("x-new", "init")
+	allocs := testing.AllocsPerRun(100, func() {
+		hm.Set("x-new", "overwrite")
+	})
+	assert.Zero(t, allocs, "SilentHeaderMap.Set on existing key must not allocate after first write")
 }
 
 func TestSilentHeaderMap_Set(t *testing.T) {
@@ -423,4 +447,10 @@ func TestAsciiToLower(t *testing.T) {
 	for _, c := range cases {
 		assert.Equal(t, c[1], asciiToLower(c[0]))
 	}
+}
+
+func TestAsciiToLower_NonASCII_Fallback(t *testing.T) {
+	// Non-ASCII triggers the strings.ToLower fallback path. Correctness only --
+	// real header keys are always ASCII; this path is a defensive fallback.
+	assert.Equal(t, "café", asciiToLower("Café"))
 }
