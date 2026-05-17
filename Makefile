@@ -165,18 +165,18 @@ test:
 # Run unit tests for all examples (pure Go, no Envoy required).
 .PHONY: examples/test
 examples/test:
-	go test -race ./examples/...
+	go test -race $$(go list ./examples/... | grep -v node_modules)
 
 # Run unit tests for all sahl examples.
 .PHONY: examples/sahl/test
 examples/sahl/test:
-	go test -race ./examples/sahl/...
+	go test -race $$(go list ./examples/sahl/... | grep -v node_modules)
 
 # Run unit tests for a specific example.
 # Usage: make examples/test/sahl/decoder
 .PHONY: examples/test/%
 examples/test/%:
-	go test -race -v ./examples/$*/...
+	go test -race -v $$(go list ./examples/$*/... | grep -v node_modules)
 
 .PHONY: format
 format:
