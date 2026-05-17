@@ -3,11 +3,6 @@
 [![ci](https://github.com/dio/luwes/actions/workflows/ci.yml/badge.svg)](https://github.com/dio/luwes/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/dio/luwes/badge.svg?branch=main)](https://coveralls.io/github/dio/luwes?branch=main)
 
-> **On the coverage number:** the badge excludes `abi_impl` (the CGO layer
-> that calls into Envoy's C ABI) and `shared/mocks` (generated code). Both
-> are covered by the e2e suite against a real Envoy 1.38.0 binary in CI.
-> Every other unit-testable package is above 85%.
-
 Zero-allocation Go SDK for Envoy dynamic modules. Drop-in replacement for
 `github.com/envoyproxy/envoy/source/extensions/dynamic_modules/sdk/go`.
 
