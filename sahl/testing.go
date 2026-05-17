@@ -10,7 +10,14 @@ import "github.com/dio/luwes/shared"
 // repeating the method set.
 type SahlFilterForTesting = sahlFilter
 
-// NewFilterForTesting constructs a filter instance for unit and integration tests.
+// NewWriterForTesting constructs a Writer for use in tests outside the sahl package.
+// The writer is not pooled; the caller owns it.
+func NewWriterForTesting(handle shared.HttpFilterHandle) *Writer {
+	w := &Writer{}
+	w.reset(handle, nil)
+	return w
+}
+
 // It bypasses the sync.Pool so each call returns a fresh, unconditionally-owned
 // instance. Callers are responsible for calling OnDestroy when done.
 //

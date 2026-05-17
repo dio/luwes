@@ -2,15 +2,17 @@ package decoder
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dio/luwes/sahl"
+	sahltest "github.com/dio/luwes/sahl/testutil"
 	"github.com/dio/luwes/shared"
 	"github.com/dio/luwes/shared/fake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// -- resolveCluster --
+// resolveCluster --
 
 func TestResolveCluster(t *testing.T) {
 	cases := []struct {
@@ -31,7 +33,7 @@ func TestResolveCluster(t *testing.T) {
 	}
 }
 
-// -- extractSSEUsage --
+// extractSSEUsage --
 
 func TestExtractSSEUsage_OpenAI(t *testing.T) {
 	tail := []byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":42}}\n")
@@ -66,7 +68,7 @@ func TestExtractSSEUsage_MalformedJSON(t *testing.T) {
 	assert.Equal(t, uint32(0), u.output)
 }
 
-// -- filter wiring --
+// filter wiring --
 
 type fakeDecoderConfigHandle struct{}
 
@@ -189,4 +191,181 @@ func TestDecoderRequest_PoolReuse(t *testing.T) {
 		cluster, _ := runRequest(t, body)
 		assert.Equal(t, tc.cluster, cluster, "model=%q", tc.model)
 	}
+}
+
+// response phase --
+
+// runResponse drives the full response-observer path for a given body and
+// content-type, returning the FakeFilterHandle for counter assertions.
+func runResponse(t *testing.T, contentType string, bodyChunks [][]byte) *fake.FakeFilterHandle {
+	t.Helper()
+	fh := fake.NewFilterHandle(
+		fake.WithHeaders(map[string]string{
+			":method": "POST",
+			":path":   "/v1/chat/completions",
+		}),
+		fake.WithResponseHeaders(map[string]string{
+			":status":      "200",
+			"content-type": contentType,
+		}),
+	)
+	f := sahltest.NewFilterWithResponse(
+		"decoder",
+		func(w *sahl.Writer, r *sahl.Request) {},
+		DecoderResponseForTest,
+		fh,
+	)
+	f.OnRequestHeaders(fh.RequestHeaders(), false)
+	f.OnResponseHeaders(fh.ResponseHeaders(), false)
+	for i, chunk := range bodyChunks {
+		eos := i == len(bodyChunks)-1
+		f.OnResponseBody(fake.NewFakeBodyBuffer(chunk), eos)
+	}
+	f.OnStreamComplete()
+	f.OnDestroy()
+	return fh
+}
+
+func TestDecoderResponse_SSE_OpenAI(t *testing.T) {
+	body := []byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\ndata: [DONE]\n\n")
+	fh := runResponse(t, "text/event-stream", [][]byte{body})
+
+	var inN uint64
+	for _, ci := range fh.CounterIncrements {
+		if ci.N > 0 && !ci.Hist {
+			inN += ci.N
+		}
+	}
+	_ = inN
+}
+
+func TestDecoderResponse_SSE_MultiChunk(t *testing.T) {
+	chunk1 := []byte("event: message_start\ndata: {\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n")
+	chunk2 := []byte("event: message_delta\ndata: {\"usage\":{\"output_tokens\":7}}\n\n")
+	fh := runResponse(t, "text/event-stream", [][]byte{chunk1, chunk2})
+	assert.NotEmpty(t, fh.CounterIncrements)
+}
+
+func TestDecoderResponse_JSON_NonStreaming(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":20,"completion_tokens":8}}`)
+	fh := runResponse(t, "application/json", [][]byte{body})
+	assert.NotEmpty(t, fh.CounterIncrements)
+}
+
+func TestDecoderResponse_JSON_MultiChunk(t *testing.T) {
+	part1 := []byte(`{"usage":{"prompt_tokens":3,`)
+	part2 := []byte(`"completion_tokens":9}}`)
+	fh := runResponse(t, "application/json", [][]byte{part1, part2})
+	assert.NotEmpty(t, fh.CounterIncrements)
+}
+
+func TestDecoderResponse_JSON_NoUsageField(t *testing.T) {
+	body := []byte(`{"choices":[{"message":{"content":"hi"}}]}`)
+	fh := runResponse(t, "application/json", [][]byte{body})
+	// No usage field: no token counters incremented.
+	var tokenIncrements int
+	for _, ci := range fh.CounterIncrements {
+		if !ci.Hist {
+			tokenIncrements++
+		}
+	}
+	assert.Zero(t, tokenIncrements)
+}
+
+func TestDecoderResponse_JSON_MalformedJSON(t *testing.T) {
+	fh := runResponse(t, "application/json", [][]byte{[]byte(`not json`)})
+	var tokenIncrements int
+	for _, ci := range fh.CounterIncrements {
+		if !ci.Hist {
+			tokenIncrements++
+		}
+	}
+	assert.Zero(t, tokenIncrements)
+}
+
+func TestDecoderResponse_JSON_EmptyBody(t *testing.T) {
+	// tapJSONChunk with empty body: early return on len(jsonBuf)==0.
+	fh := runResponse(t, "application/json", [][]byte{{}})
+	assert.Empty(t, fh.CounterIncrements)
+}
+
+func TestDecoderResponse_SSE_NoUsage(t *testing.T) {
+	body := []byte("data: {\"delta\":\"hi\"}\n\n")
+	fh := runResponse(t, "text/event-stream", [][]byte{body})
+	// No usage fields: no token counters.
+	var tokenIncrements int
+	for _, ci := range fh.CounterIncrements {
+		if !ci.Hist {
+			tokenIncrements++
+		}
+	}
+	assert.Zero(t, tokenIncrements)
+}
+
+// TestClusterFromMeta confirms the fallback returns ClusterDefault.
+func TestClusterFromMeta(t *testing.T) {
+	// clusterFromMeta is a no-op that returns ClusterDefault.
+	// Pass nil Writer the function ignores it.
+	assert.Equal(t, ClusterDefault, clusterFromMeta(nil))
+}
+
+// TestSend400 confirms send400 sends a 400 with the right body.
+func TestSend400(t *testing.T) {
+	fh := fake.NewFilterHandle()
+	w := sahl.NewWriterForTesting(fh)
+	send400(w, "bad model")
+	require.Len(t, fh.LocalResponses, 1)
+	assert.Equal(t, uint32(400), fh.LocalResponses[0].Status)
+	assert.Contains(t, string(fh.LocalResponses[0].Body), "bad model")
+}
+
+// TestEmitTTFT_ZeroElapsed exercises the ms==0 early-return branch in emitTTFT.
+// When sentAt and firstChunk are identical (elapsed==0), no histogram is recorded.
+func TestEmitTTFT_ZeroElapsed(t *testing.T) {
+	fh := fake.NewFilterHandle()
+	w := sahl.NewWriterForTesting(fh)
+	now := time.Now()
+	s := &respState{sentAt: now, firstChunk: now, cluster: ClusterDefault}
+	emitTTFT(w, s)
+	var histSeen bool
+	for _, ci := range fh.CounterIncrements {
+		if ci.Hist {
+			histSeen = true
+		}
+	}
+	assert.False(t, histSeen, "zero elapsed must not record histogram")
+}
+
+// TestEmitTTFT_NonZeroElapsed confirms the histogram is queued when elapsed > 0.
+// Uses a response-observer path to flush mutations properly.
+func TestEmitTTFT_NonZeroElapsed(t *testing.T) {
+	// Build an SSE response where sentAt is artificially backdated so elapsed > 0.
+	// We can't control sentAt externally, so drive through a 2ms sleep between
+	// header call and body chunk delivery.
+	fh := fake.NewFilterHandle(
+		fake.WithResponseHeaders(map[string]string{
+			":status":      "200",
+			"content-type": "text/event-stream",
+		}),
+	)
+	f := sahltest.NewFilterWithResponse("decoder",
+		func(w *sahl.Writer, r *sahl.Request) {},
+		DecoderResponseForTest,
+		fh,
+	)
+	f.OnRequestHeaders(fh.RequestHeaders(), false)
+	f.OnResponseHeaders(fh.ResponseHeaders(), false)
+	time.Sleep(2 * time.Millisecond) // ensure elapsed > 0ms
+	body := []byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n")
+	f.OnResponseBody(fake.NewFakeBodyBuffer(body), true)
+	f.OnStreamComplete()
+
+	var histSeen bool
+	for _, ci := range fh.CounterIncrements {
+		if ci.Hist {
+			histSeen = true
+			assert.GreaterOrEqual(t, ci.N, uint64(1))
+		}
+	}
+	assert.True(t, histSeen, "expected TTFT histogram after non-zero elapsed")
 }
