@@ -163,21 +163,20 @@ test:
 	go test -race ./...
 
 # Run unit tests for all examples (pure Go, no Envoy required).
-.PHONY: test-examples
-test-examples:
+.PHONY: examples/test
+examples/test:
 	go test -race ./examples/...
 
 # Run unit tests for all sahl examples.
-.PHONY: test-sahl
-test-sahl:
+.PHONY: examples/sahl/test
+examples/sahl/test:
 	go test -race ./examples/sahl/...
 
 # Run unit tests for a specific example.
-# Usage: make test-example EXAMPLE=sahl/decoder
-EXAMPLE ?= header-auth
-.PHONY: test-example
-test-example:
-	go test -race -v ./examples/$(EXAMPLE)/...
+# Usage: make examples/test/sahl/decoder
+.PHONY: examples/test/%
+examples/test/%:
+	go test -race -v ./examples/$*/...
 
 .PHONY: format
 format:
