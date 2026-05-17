@@ -1,10 +1,10 @@
-// Package e2e contains integration tests that run a real Envoy process
-// against filters compiled with luwes.
+// Package e2e runs integration tests against a real Envoy binary.
+//
+// TestMain builds a combined .so from all e2e filters (header-auth and
+// header-auth-sahl), starts Envoy, and tears it all down when done.
 //
 // Prerequisites:
-//   - Envoy binary at .bin/envoy (make .bin/envoy) or ENVOY_BIN env var
-//   - Compiled filter: make build-linux-amd64 EXAMPLE=header-auth (linux)
-//     or: make build EXAMPLE=header-auth (darwin, local dev)
+//   - Envoy binary at .bin/envoy (run: make .bin/envoy) or set ENVOY_BIN
 //
 // Run:
 //
@@ -12,10 +12,10 @@
 //
 // Or manually:
 //
-//	ENVOY_BIN=.bin/envoy LUWES_SO=dist/libheader-auth.so \
-//	  go test -C e2e -v -timeout=60s -run TestHeaderAuth ./...
+//	ENVOY_BIN=.bin/envoy go test -C e2e -v -timeout=60s ./...
 //
-// Tests skip automatically when ENVOY_BIN or LUWES_SO are not present.
+// Tests skip automatically when ENVOY_BIN is not present.
+// Set LUWES_SKIP_BUILD=1 to reuse a previously built .so (faster iteration).
 package e2e
 
 import (
@@ -26,38 +26,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"runtime"
 	"testing"
 	"time"
 )
 
 const (
-	envoyAddr = "http://localhost:10000"
-	adminAddr = "http://localhost:9901"
+	// Port 10000: header-auth filter (raw luwes SDK)
+	headerAuthAddr = "http://localhost:10000"
+	// Port 10001: header-auth-sahl filter (sahl ergonomic layer)
+	headerAuthSahlAddr = "http://localhost:10001"
+	adminAddr          = "http://localhost:9901"
 )
 
 var (
-	envoyCmd *exec.Cmd
-	soPath   string
+	envoyCmd    *exec.Cmd
+	projectRoot string
 )
 
-func envoyBin() string {
-	if b := os.Getenv("ENVOY_BIN"); b != "" {
-		return b
-	}
-	// Default: Makefile download location, one level up from e2e/.
-	return filepath.Join("..", ".bin", "envoy")
-}
-
 func TestMain(m *testing.M) {
-	soPath = os.Getenv("LUWES_SO")
-	if soPath == "" {
-		soPath = filepath.Join("..", "dist", "libheader-auth.so")
-	}
-	if _, err := os.Stat(soPath); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: .so not found at %s (run: make build EXAMPLE=header-auth)\n", soPath)
-		os.Exit(0)
-	}
+	_, file, _, _ := runtime.Caller(0)
+	projectRoot = filepath.Dir(file)
 
 	bin := envoyBin()
 	if _, err := os.Stat(bin); err != nil {
@@ -65,27 +54,55 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	soDir := filepath.Dir(soPath)
-	cfgPath := writeEnvoyConfig(soDir)
+	soPath := filepath.Join(projectRoot, "libe2e.so")
+
+	if os.Getenv("LUWES_SKIP_BUILD") == "" {
+		fmt.Fprintln(os.Stderr, "e2e: building libe2e.so ...")
+		cmd := exec.Command("go", "build", "-trimpath", "-buildmode=c-shared", "-o", soPath, "./cmd")
+		cmd.Dir = projectRoot
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "e2e: build failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "e2e: build OK")
+	} else {
+		if _, err := os.Stat(soPath); err != nil {
+			fmt.Fprintf(os.Stderr, "e2e: LUWES_SKIP_BUILD=1 but libe2e.so not found at %s\n", soPath)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "e2e: reusing existing libe2e.so (LUWES_SKIP_BUILD=1)")
+	}
+
+	cfgPath := writeEnvoyConfig()
 	defer os.Remove(cfgPath)
 
 	envoyCmd = exec.Command(bin,
 		"-c", cfgPath,
 		"--log-level", "warning",
+		"--component-log-level", "dynamic_modules:info",
 	)
 	envoyCmd.Env = append(os.Environ(),
 		"GODEBUG=cgocheck=0",
-		"ENVOY_DYNAMIC_MODULES_SEARCH_PATH="+soDir,
+		"ENVOY_DYNAMIC_MODULES_SEARCH_PATH="+projectRoot,
 	)
-	envoyCmd.Stdout = os.Stdout
+	envoyCmd.Stdout = os.Stderr
 	envoyCmd.Stderr = os.Stderr
 
 	if err := envoyCmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start Envoy: %v\n", err)
+		fmt.Fprintf(os.Stderr, "e2e: envoy start failed: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stderr, "e2e: envoy pid=%d\n", envoyCmd.Process.Pid)
 
-	waitForEnvoy(adminAddr, 15*time.Second)
+	if !waitReady(15 * time.Second) {
+		envoyCmd.Process.Kill()
+		fmt.Fprintln(os.Stderr, "e2e: envoy not ready in time")
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stderr, "e2e: envoy ready")
 
 	code := m.Run()
 
@@ -94,32 +111,34 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func waitForEnvoy(addr string, timeout time.Duration) {
+func envoyBin() string {
+	if b := os.Getenv("ENVOY_BIN"); b != "" {
+		return b
+	}
+	return filepath.Join(projectRoot, "..", ".bin", "envoy")
+}
+
+func waitReady(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(addr + "/ready")
-		if err == nil && resp.StatusCode == 200 {
+		resp, err := http.Get(adminAddr + "/ready")
+		if err == nil {
 			resp.Body.Close()
-			return
-		}
-		if resp != nil {
-			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return true
+			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	panic("Envoy did not become ready within " + timeout.String())
+	return false
 }
 
-// writeEnvoyConfig writes a minimal envoy.yaml to a temp file and returns its path.
-func writeEnvoyConfig(soDir string) string {
-	base := filepath.Base(soPath)
-	base = strings.TrimPrefix(base, "lib")
-	base = strings.TrimSuffix(base, ".so")
-
-	cfg := fmt.Sprintf(`
+func writeEnvoyConfig() string {
+	cfg := `
 static_resources:
   listeners:
-    - name: listener_0
+    # Port 10000: header-auth (raw luwes SDK)
+    - name: header-auth
       address:
         socket_address: { address: 0.0.0.0, port_value: 10000 }
       filter_chains:
@@ -127,13 +146,13 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: ingress
+                stat_prefix: header_auth
                 http_filters:
-                  - name: %s
+                  - name: header-auth
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
                       dynamic_module_config:
-                        name: %s
+                        name: e2e
                       filter_name: header-auth
                       filter_config:
                         "@type": type.googleapis.com/google.protobuf.StringValue
@@ -151,18 +170,50 @@ static_resources:
                           direct_response:
                             status: 200
                             body: { inline_string: "ok" }
+
+    # Port 10001: header-auth-sahl (sahl ergonomic layer)
+    - name: header-auth-sahl
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10001 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: header_auth_sahl
+                http_filters:
+                  - name: header-auth-sahl
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: header-auth-sahl
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: sahl_local
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "ok" }
+
 admin:
   address:
     socket_address: { address: 127.0.0.1, port_value: 9901 }
-`, base, base)
-
+`
 	f, err := os.CreateTemp("", "luwes-e2e-*.yaml")
 	if err != nil {
 		panic(err)
 	}
-	if _, err := f.WriteString(cfg); err != nil {
-		panic(err)
-	}
+	f.WriteString(cfg)
 	f.Close()
 	return f.Name()
 }

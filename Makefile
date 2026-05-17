@@ -193,8 +193,8 @@ bench-profile:
 # LUWES_SO  defaults to dist/libheader-auth.so.
 .PHONY: e2e
 e2e: $(ENVOY_BIN)
-	ENVOY_BIN=$(ENVOY_BIN) LUWES_SO=$(CURDIR)/dist/libheader-auth.so \
-	go test -C e2e -v -timeout=60s -run TestHeaderAuth ./...
+	ENVOY_BIN=$(ENVOY_BIN) \
+	go test -C e2e -v -timeout=90s ./...
 
 # Sync abi.h from envoy at a given commit
 # Usage: make sync-abi COMMIT=<hash>

@@ -6,3 +6,4 @@ bench/profiles/*.out
 *.h.bak
 go.work.sum
 coverage.out
+e2e/*.so

@@ -66,9 +66,19 @@ type FakeFilterHandle struct {
 	metadata     map[string]map[string]any
 
 	// Recorded side effects for assertions.
-	LocalResponses []LocalResponse
-	ContinuedReq   int
-	ContinuedResp  int
+	LocalResponses    []LocalResponse
+	ContinuedReq      int
+	ContinuedResp     int
+	ClearedRouteCache int
+	CounterIncrements []CounterIncrement
+}
+
+// CounterIncrement records a single IncrementCounterValue or RecordHistogramValue call.
+type CounterIncrement struct {
+	ID   shared.MetricID
+	N    uint64
+	Tags []string
+	Hist bool
 }
 
 type LocalResponse struct {
@@ -107,7 +117,7 @@ func (h *FakeFilterHandle) SetReceivedBufferedResponseBody(v bool) { h.bufferedR
 
 func (h *FakeFilterHandle) ContinueRequest()     { h.ContinuedReq++ }
 func (h *FakeFilterHandle) ContinueResponse()    { h.ContinuedResp++ }
-func (h *FakeFilterHandle) ClearRouteCache()     {}
+func (h *FakeFilterHandle) ClearRouteCache()     { h.ClearedRouteCache++ }
 func (h *FakeFilterHandle) RefreshRouteCluster() {}
 
 // -- Local response --
@@ -235,7 +245,8 @@ func (h *FakeFilterHandle) ClearDownstreamWatermarkCallbacks()                  
 
 // -- Metrics --
 
-func (h *FakeFilterHandle) RecordHistogramValue(_ shared.MetricID, _ uint64, _ ...string) shared.MetricsResult {
+func (h *FakeFilterHandle) RecordHistogramValue(id shared.MetricID, n uint64, tags ...string) shared.MetricsResult {
+	h.CounterIncrements = append(h.CounterIncrements, CounterIncrement{ID: id, N: n, Tags: tags, Hist: true})
 	return shared.MetricsSuccess
 }
 func (h *FakeFilterHandle) SetGaugeValue(_ shared.MetricID, _ uint64, _ ...string) shared.MetricsResult {
@@ -247,7 +258,8 @@ func (h *FakeFilterHandle) IncrementGaugeValue(_ shared.MetricID, _ uint64, _ ..
 func (h *FakeFilterHandle) DecrementGaugeValue(_ shared.MetricID, _ uint64, _ ...string) shared.MetricsResult {
 	return shared.MetricsSuccess
 }
-func (h *FakeFilterHandle) IncrementCounterValue(_ shared.MetricID, _ uint64, _ ...string) shared.MetricsResult {
+func (h *FakeFilterHandle) IncrementCounterValue(id shared.MetricID, n uint64, tags ...string) shared.MetricsResult {
+	h.CounterIncrements = append(h.CounterIncrements, CounterIncrement{ID: id, N: n, Tags: tags})
 	return shared.MetricsSuccess
 }
 
