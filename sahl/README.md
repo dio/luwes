@@ -157,6 +157,49 @@ with different `filter_config` bytes without one overwriting the other's state.
 Any `Register*Config*` function that writes to package-level vars is not safe
 for multi-listener use.
 
+#### When to use which
+
+Start with these three questions:
+
+**1. Does your handler need to observe or modify the response body or headers?**
+- No: continue to question 2.
+- Response headers only (read/stamp): use `RegisterWithResponse`.
+- Response body (buffer, rewrite): use `RegisterWithBody` or `RegisterWithBodyAndResponse`.
+- Both + metrics: use `RegisterWithBodyConfigAndResponse` (package-level state, single-listener only).
+
+**2. Does your filter need metrics, parsed config, or per-listener isolation?**
+- No: use `Register`. Zero boilerplate, safe for any number of listeners.
+- Yes, and only one listener will ever use this filter name: use `RegisterWithConfig`.
+  Simpler than a factory: one `configFn` side-effects into package vars.
+- Yes, and multiple listeners need independent state: use `RegisterFactory`. Each listener
+  gets its own closure. This is the safe default when you are not sure.
+
+**3. Are you wiring into `sdk.RegisterRaw` from outside sahl's registry?**
+- Use `sahl.Factory(handler)` as a one-off adapter. Does not touch the sahl registry.
+
+Decision tree summary:
+
+```
+need response phase?
+  yes: RegisterWithResponse / RegisterWithBody / RegisterWithBodyAndResponse
+  no:
+    need metrics or config?
+      no:  Register
+      yes:
+        multiple listeners with different configs?
+          no:  RegisterWithConfig  (simpler, package-level state)
+          yes: RegisterFactory     (closure per listener, always correct)
+```
+
+The rule on multi-listener safety: any `Register*Config*` variant that takes a
+`ConfigFunc` writes to package-level vars. Two listeners with the same filter name
+will race at config load time and the second one silently overwrites the first.
+`RegisterFactory` avoids this because the factory function is called once per
+listener and each call gets its own local variables.
+
+When in doubt, use `RegisterFactory`. The only cost over `RegisterWithConfig` is
+one extra function literal.
+
 #### Side-by-side: RegisterWithConfig vs RegisterFactory
 
 Both define a counter and parse config. The difference is where state lives.
