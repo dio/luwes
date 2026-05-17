@@ -247,6 +247,74 @@ static_resources:
                             cluster: sse_upstream
                             timeout: 30s
 
+    # Port 10003: auth (RegisterFactory, admin listener -- key-admin, key-ops)
+    - name: auth-admin
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10003 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: auth_admin
+                http_filters:
+                  - name: auth
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: auth
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{"allowed_keys":["key-admin","key-ops"],"header":"x-api-key","metadata_ns":"auth.admin"}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: auth_admin
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "admin ok" }
+
+    # Port 10004: auth (RegisterFactory, user listener -- key-user, key-guest)
+    - name: auth-user
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10004 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: auth_user
+                http_filters:
+                  - name: auth
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: auth
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{"allowed_keys":["key-user","key-guest"],"header":"x-api-key","metadata_ns":"auth.user"}'
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: auth_user
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "user ok" }
+
   clusters:
     - name: sse_upstream
       connect_timeout: 5s
