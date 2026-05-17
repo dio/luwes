@@ -118,29 +118,118 @@ func myHandler(w *sahl.Writer, r *sahl.Request) {
 `Go` must be called at most once per request. Panics on duplicate calls.
 The context passed to `Go` is cancelled if the client disconnects.
 
-### Per-config state with RegisterFactory
+### Per-config state: Factories
 
-When a filter needs metric IDs, parsed config, or per-factory pools:
+When a filter needs metric IDs, parsed config, or per-listener isolation, use
+`RegisterFactory`. The factory is called once per Envoy filter-chain (listener);
+each call returns a new `HandlerFunc` that closes over its own state.
+
+#### The three lifetimes
+
+| Lifetime | Created | Type in sahl |
+|---|---|---|
+| program init | once per process | global registry entry |
+| filter config create | once per listener / filter chain | `configFactory` -> `filterFactory` |
+| filter instance create | once per HTTP request | `sahlFilter` (pool-allocated) |
+
+#### Registration function comparison
+
+| Function | Per-listener state | Metrics | Body buffering | Response observer | Multi-listener safe |
+|---|---|---|---|---|---|
+| `Register` | no | no | no | no | yes |
+| `RegisterWithConfig` | no | yes | no | no | **NO** (package vars overwritten) |
+| `RegisterWithResponse` | no | no | no | yes | yes |
+| `RegisterWithConfigAndResponse` | no | yes | no | yes | **NO** |
+| `RegisterWithBody` | no | no | yes | no | yes |
+| `RegisterWithBodyAndResponse` | no | no | yes | yes | yes |
+| `RegisterWithBodyConfigAndResponse` | no | yes | yes | yes | **NO** |
+| `RegisterFactory` | **yes** | **yes** | no | no | **yes** |
+
+"Multi-listener safe" means two envoy.yaml listeners can reference this filter
+with different `filter_config` bytes without one overwriting the other's state.
+Any `Register*Config*` function that writes to package-level vars is not safe
+for multi-listener use.
+
+#### Side-by-side: RegisterWithConfig vs RegisterFactory
+
+Both define a counter and parse config. The difference is where state lives.
+
+**RegisterWithConfig:** state in package vars, second listener silently overwrites first.
+
+```go
+// package-level: shared by ALL listeners using this filter
+var (
+    reqTotal sahl.MetricID
+    allowed  map[string]struct{}
+)
+
+func init() {
+    sahl.RegisterWithConfig("auth",
+        func(h sahl.ConfigHandle) error {
+            cfg := parseConfig(h.RawConfig()) // listener 2 overwrites listener 1
+            allowed = buildSet(cfg.AllowedKeys)
+            reqTotal, _ = h.DefineCounter("auth_requests_total", "result")
+            return nil
+        },
+        func(w *sahl.Writer, r *sahl.Request) {
+            key, _ := r.Header.Peek("x-api-key")
+            if _, ok := allowed[key]; !ok { // reads the LAST-written allowed
+                w.IncrementCounter(reqTotal, 1, "rejected")
+                w.Send(401, `{"error":"unauthorized"}`)
+                return
+            }
+            w.IncrementCounter(reqTotal, 1, "allowed")
+        },
+    )
+}
+```
+
+**RegisterFactory:** state in closure, each listener gets its own copy.
 
 ```go
 func init() {
-    sahl.RegisterFactory("my-filter",
+    sahl.RegisterFactory("auth",
         func(h sahl.ConfigHandle) (sahl.HandlerFunc, error) {
-            counter, err := h.DefineCounter("my_requests_total", "result")
-            if err != nil {
-                return nil, err
-            }
-            cfg, err := parseConfig(h.RawConfig())
+            // runs once per listener; vars are local to this call
+            cfg := parseConfig(h.RawConfig())
+            allowed := buildSet(cfg.AllowedKeys) // each listener gets its own
+            reqTotal, err := h.DefineCounter("auth_requests_total", "result")
             if err != nil {
                 return nil, err
             }
             return func(w *sahl.Writer, r *sahl.Request) {
-                // counter and cfg are captured once, shared across requests.
-                w.IncrementCounter(counter, 1, "ok")
+                key, _ := r.Header.Peek("x-api-key")
+                if _, ok := allowed[key]; !ok { // reads THIS listener's allowed
+                    w.IncrementCounter(reqTotal, 1, "rejected")
+                    w.Send(401, `{"error":"unauthorized"}`)
+                    return
+                }
+                w.IncrementCounter(reqTotal, 1, "allowed")
             }, nil
         },
     )
 }
+```
+
+See `examples/sahl/auth` for a complete two-listener isolation example.
+
+#### The metric ID constraint
+
+Metric IDs must be defined at filter config time, not per-request. `ConfigHandle`
+is only available in `configFn` or the factory function; you cannot call
+`DefineCounter` from a `HandlerFunc`. Envoy allocates the metric slot once.
+
+#### configHandleImpl wrapping in tests
+
+`configFactory.Create` wraps the raw config bytes passed as its second parameter.
+`RawConfig()` returns that parameter, not the fake handle's field. In tests:
+
+```go
+// correct: raw bytes flow through the second parameter
+factory, err := def.Create(&fakeHandle{}, []byte(configJSON))
+
+// wrong: RawConfig() returns nil, config parse gets empty struct
+factory, err := def.Create(&fakeHandle{raw: configJSON}, nil)
 ```
 
 ### Middleware
@@ -160,6 +249,38 @@ sahl.Register("my-filter", sahl.Chain(myHandler, authMiddleware, loggingMiddlewa
 ```
 
 `Chain(h, mw1, mw2, ...)`: `mw1` is outermost (runs first, can call `next` or short-circuit).
+
+## Multiple filters in one .so
+
+A single package can register several filters in one `init()`. Each is keyed by
+name and must match the `filter_name` in envoy.yaml.
+
+```go
+func init() {
+    sahl.Register("spa", SPAHandler)
+    sahl.Register("api-backend", sahl.Chain(APIHandler, apiLogMiddleware))
+}
+```
+
+Both filters share the same process and the same embedded assets (e.g.
+`//go:embed ui/dist`), but have separate handler functions, separate per-request
+pools, and separate metric namespaces. Envoy dispatches via `filter_name`:
+
+```yaml
+http_filters:
+  - name: api-backend
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+      dynamic_module_config: { name: myfilter }
+      filter_name: api-backend   # must match Register() call
+  - name: spa
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+      dynamic_module_config: { name: myfilter }
+      filter_name: spa           # must match Register() call
+```
+
+Registering the same name twice panics at startup: `BUG: sahl filter %q registered twice`.
 
 ## Allocation budget
 
