@@ -159,7 +159,6 @@ directly into Envoy's header table.
 | Benchmark | upstream SDK | luwes |
 |-----------|-------------|-------|
 | HeaderAuthAccept | 1 alloc/op | **0 allocs/op** |
-| GetOne (miss) | 0 allocs/op | 0 allocs/op |
 | GetOneInto (hit) | n/a | **0 allocs/op** |
 | GetAll (10 headers) | 2 allocs/op | 1 alloc/op |
 
