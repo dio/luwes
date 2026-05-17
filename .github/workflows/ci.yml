@@ -54,8 +54,9 @@ jobs:
       - run: make test
 
   # ---------------------------------------------------------------------------
-  # coverage: per-package coverage report + floor enforcement
+  # coverage: per-package coverage report + floor enforcement + coveralls
   # Excludes abi_impl (CGO/live Envoy), shared/mocks (generated), cmd, bench.
+  # coverallsapp/github-action@v2.3.7  5cbfd81b66ca5d10c19b062c04de0199c215fb6e
   # ---------------------------------------------------------------------------
   coverage:
     name: coverage
@@ -107,11 +108,11 @@ jobs:
           print("coverage check passed")
           EOF
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+      - name: upload to coveralls
+        uses: coverallsapp/github-action@5cbfd81b66ca5d10c19b062c04de0199c215fb6e # v2.3.7
         with:
-          name: coverage
-          path: coverage.out
+          file: coverage.out
+          format: golang
 
 
   # ---------------------------------------------------------------------------
