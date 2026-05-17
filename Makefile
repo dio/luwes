@@ -237,14 +237,6 @@ clean:
 tidy:
 	go mod tidy
 
-# Build the Vite SPA (examples/sahl/spa/ui/dist/).
-# Required before go test/vet/build for any package that uses //go:embed ui/dist.
-# Node >= 18 required. Uses npm ci (reproducible from package-lock.json).
-.PHONY: build-spa-ui
-build-spa-ui:
-	npm ci --prefix examples/sahl/spa/ui --silent
-	npm run build --prefix examples/sahl/spa/ui
-
 # Run Lightpanda + Playwright e2e tests for the sahl/spa example.
 # Requires: .bin/envoy (run: make .bin/envoy), Node >= 24.
 # Builds dist/libspa.so, starts Envoy, runs 13 browser tests, tears down.

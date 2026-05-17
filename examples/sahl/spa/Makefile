@@ -24,11 +24,18 @@ _ARCH    := $(shell uname -m | sed 's/arm64/aarch64/')
 ZIG_OS   := $(if $(filter darwin,$(_OS)),macos,$(_OS))
 ZIG_URL  := https://ziglang.org/download/$(ZIG_VERSION)/zig-$(_ARCH)-$(ZIG_OS)-$(ZIG_VERSION).tar.xz
 
-.PHONY: all build build-linux-amd64 build-linux-arm64 build-linux \
+.PHONY: all build ui build-linux-amd64 build-linux-arm64 build-linux \
         docker docker-push smoke clean zig
 
 ## all: cross-compile both Linux .so files then build the Docker image
 all: build-linux docker
+
+## ui: install npm deps and build Vite output (ui/dist/).
+## Used by CI (make -C examples/sahl/spa ui) and required before any Go
+## build/test of this package (//go:embed ui/dist).
+ui:
+	npm ci --prefix $(dir $(lastword $(MAKEFILE_LIST)))ui --silent
+	npm run build --prefix $(dir $(lastword $(MAKEFILE_LIST)))ui
 
 ## build: compile the .so for the current host (local dev / macOS)
 build:
