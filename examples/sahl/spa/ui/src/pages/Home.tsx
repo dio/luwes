@@ -10,7 +10,7 @@ export default function Home() {
         Navigate to <strong>About</strong> or <strong>Dashboard</strong> using the
         links above. Each route is handled by React Router on the client side.
         If you refresh on <code>/about</code> or <code>/dashboard</code>, the
-        jisr filter returns <code>index.html</code> and React Router takes over.
+        the filter returns <code>index.html</code> and React Router takes over.
       </p>
     </div>
   )

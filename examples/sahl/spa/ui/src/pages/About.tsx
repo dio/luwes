@@ -3,7 +3,7 @@ export default function About() {
     <div>
       <h2>About</h2>
       <p>
-        <strong>jisr</strong> (جسر) is a net/http-style handler abstraction
+        <strong>sahl</strong> is an ergonomic handler abstraction
         for writing Envoy dynamic module filters in Go.
       </p>
       <p>

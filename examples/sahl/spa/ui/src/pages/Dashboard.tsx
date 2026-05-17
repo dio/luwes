@@ -29,7 +29,7 @@ export default function Dashboard() {
       <h2>Dashboard</h2>
       <p>
         Calls <code>GET /api/time</code> — handled directly inside the{' '}
-        <code>.so</code> by the <code>api-backend</code> jisr filter.
+        <code>.so</code> by the <code>api-backend</code> sahl filter.
         No upstream cluster involved.
       </p>
       <button onClick={fetchTime} disabled={loading}>
