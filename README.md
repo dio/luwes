@@ -92,13 +92,33 @@ Use `.ToString()` or `.ToBytes()` to copy into Go memory when you need to retain
 
 ## Examples
 
+### Raw SDK
+
 | Example | What it shows |
-|---------|--------------|
+|---|---|
 | [hello](examples/hello/) | Minimal filter: read `:path`, stamp response header |
 | [header-auth](examples/header-auth/) | API key auth, sync.Pool, 0 allocs/op on hot path |
 | [observability](examples/observability/) | Metrics, tracing, structured logging |
 
 Each example has an `envoy.yaml` and a `README.md` with run instructions.
+
+### sahl ergonomic layer
+
+[sahl](sahl/) (`github.com/dio/luwes/sahl`) is a higher-level API built on top of
+luwes. It trades 3 fixed allocations per request for a clean handler signature,
+pooled per-request state, and built-in support for body buffering, response
+observation, and per-listener factory isolation.
+
+| Example | What it shows |
+|---|---|
+| [sahl/header-auth](examples/sahl/header-auth/) | Same auth filter as above, written with sahl |
+| [sahl/auth](examples/sahl/auth/) | `RegisterFactory`: per-listener config isolation, two listeners from one .so |
+| [sahl/decoder](examples/sahl/decoder/) | Body-aware routing: model name to upstream cluster, SSE token tap |
+| [sahl/sse-tap](examples/sahl/sse-tap/) | Response observer: tap SSE streams for token usage without buffering |
+| [sahl/spa](examples/sahl/spa/) | Embedded SPA (`//go:embed`) + JSON API handler, two filters in one .so |
+
+See [sahl/README.md](sahl/README.md) for the full API reference including the
+registration function comparison table and factory design.
 
 ## Development
 
