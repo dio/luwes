@@ -55,7 +55,7 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 		f.handle.SendLocalResponse(401, nil, []byte(`{"error":"missing x-api-key"}`), "auth")
 		return shared.HeadersStatusStop
 	}
-	// Inject user identity header. key points into Envoy-owned memory -- valid
+	// Inject user identity header. key points into Envoy-owned memory, valid
 	// for this callback. ToUnsafeString() produces a string header without copying.
 	f.handle.RequestHeaders().Set("x-user-id", key.ToUnsafeString())
 	return shared.HeadersStatusContinue

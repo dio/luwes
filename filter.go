@@ -6,7 +6,7 @@
 //
 // # Registration
 //
-// The simplest registration -- provide a factory function that returns a
+// The simplest registration: provide a factory function that returns a
 // shared.HttpFilterFactory from a config handle and raw config bytes:
 //
 //	func init() {
@@ -21,7 +21,7 @@
 //	    })
 //	}
 //
-// For raw control -- when you already have a shared.HttpFilterConfigFactory:
+// For raw control (when you already have a shared.HttpFilterConfigFactory):
 //
 //	func init() {
 //	    luwes.RegisterRaw("my-filter", &myConfigFactory{})
@@ -141,7 +141,7 @@ func (a *factoryFuncAdapter) CreatePerRoute(_ []byte) (any, error) { return nil,
 var pprofOnce sync.Once
 
 // StartPprof starts a Go pprof admin server. Call from your cmd/main.go init()
-// after Register calls -- at that point the Go runtime is fully initialized
+// after Register calls; at that point the Go runtime is fully initialized
 // inside the .so and net.Listen is safe to call.
 //
 // addr is the TCP address to bind. Empty string defaults to 127.0.0.1:6061.
@@ -149,10 +149,10 @@ var pprofOnce sync.Once
 //
 // The server exposes:
 //
-//	GET /debug/pprof/  -- pprof index
-//	GET /debug/pprof/allocs -- allocation profile (primary flamegraph target)
-//	GET /debug/pprof/heap   -- heap snapshot
-//	GET /healthz            -- {"status":"ok"}
+//	GET /debug/pprof/           pprof index
+//	GET /debug/pprof/allocs     allocation profile (primary flamegraph target)
+//	GET /debug/pprof/heap       heap snapshot
+//	GET /healthz                {"status":"ok"}
 //
 // StartPprof is a no-op if called more than once or if the port is already in use.
 func StartPprof(addr string) {
@@ -165,7 +165,7 @@ func StartPprof(addr string) {
 		}
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
-			// Port in use or permission denied -- skip silently.
+			// Port in use or permission denied; skip silently.
 			// This is intentional: StartPprof is a best-effort helper.
 			return
 		}

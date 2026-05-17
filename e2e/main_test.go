@@ -55,13 +55,13 @@ func TestMain(m *testing.M) {
 		soPath = filepath.Join("..", "dist", "libheader-auth.so")
 	}
 	if _, err := os.Stat(soPath); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: .so not found at %s -- run: make build EXAMPLE=header-auth\n", soPath)
+		fmt.Fprintf(os.Stderr, "SKIP: .so not found at %s (run: make build EXAMPLE=header-auth)\n", soPath)
 		os.Exit(0)
 	}
 
 	bin := envoyBin()
 	if _, err := os.Stat(bin); err != nil {
-		fmt.Fprintf(os.Stderr, "SKIP: envoy not found at %s -- run: make .bin/envoy\n", bin)
+		fmt.Fprintf(os.Stderr, "SKIP: envoy not found at %s (run: make .bin/envoy)\n", bin)
 		os.Exit(0)
 	}
 

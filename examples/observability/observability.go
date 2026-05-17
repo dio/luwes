@@ -55,7 +55,7 @@ type Filter struct {
 func NewFactory(h shared.HttpFilterConfigHandle, _ []byte) (shared.HttpFilterFactory, error) {
 	f := &Factory{}
 
-	// Counter: no tag keys here -- pure atomic increment per request.
+	// Counter: no tag keys here, pure atomic increment per request.
 	// To add a method tag: DefineCounter("requests_total", "method")
 	// but then IncrementCounterValue needs a tag value on every request
 	// (1 slice alloc + 1 symbol table write). Only use tags if you need the
@@ -93,7 +93,7 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 	// -- Method (bounded tag value, safe to use as histogram tag) --
 	// GetOne is zero-alloc on the Go side (valueView escapes at CGO boundary,
 	// structural cost present in both upstream SDK and luwes).
-	// ToString() copies into Go memory -- safe to use after callback returns.
+	// ToString() copies into Go memory, safe to use after callback returns.
 	f.method = headers.GetOne(":method").ToString()
 
 	// -- Metrics: increment request counter --
@@ -103,7 +103,7 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 	// -- Tracing: annotate the active Envoy span --
 	// GetActiveSpan returns the span Envoy created for this request (if any
 	// tracing provider is configured, e.g. Zipkin, Jaeger, OTLP). Returns nil
-	// if no tracing is active -- all dymSpan methods guard for nil span.
+	// if no tracing is active; all dymSpan methods guard for nil span.
 	span := f.handle.GetActiveSpan()
 	if span != nil {
 		// Tag the span with filter identity. Appears in the trace UI.
@@ -113,7 +113,7 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 		// Spawn a child span to measure the filter's own work.
 		// The child is finished in OnResponseHeaders via the ChildSpan.Finish() call.
 		// Child spans let you see filter latency separately from upstream latency
-		// in traces -- useful for identifying filter overhead.
+		// in traces, useful for identifying filter overhead.
 		child := span.SpawnChild("luwes.observability.request")
 		if child != nil {
 			child.SetTag("phase", "request_headers")
@@ -162,7 +162,7 @@ func (f *Filter) OnResponseHeaders(headers shared.HeaderMap, _ bool) shared.Head
 	}
 
 	// Enrich access log with response status.
-	// Safe to call ToString on the status header -- present in all responses.
+	// Safe to call ToString on the status header; present in all responses.
 	status := headers.GetOne(":status").ToString()
 	f.handle.SetMetadata("luwes", "status", status)
 

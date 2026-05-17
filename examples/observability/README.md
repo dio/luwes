@@ -18,8 +18,8 @@ Two metrics defined at config load time (once, not per-request):
 | `luwes_observability_handler_duration_ms` | histogram | Time from request headers to response headers |
 
 Both use no tag keys, which means:
-- `IncrementCounterValue(id, 1)` -- pure atomic add, no symbol table write
-- `RecordHistogramValue(id, ms)` -- no tag args, no slice alloc
+- `IncrementCounterValue(id, 1)`: pure atomic add, no symbol table write
+- `RecordHistogramValue(id, ms)`: no tag args, no slice alloc
 
 See the [stats analysis](../../docs/envoy-stats.md) for why tag cardinality matters.
 
@@ -79,7 +79,7 @@ luwes.status=%DYNAMIC_METADATA(luwes:status)%
 ```
 
 This means every access log line carries the method, path, and response status
-as structured fields -- without extra log calls per request.
+as structured fields, without extra log calls per request.
 
 For Envoy's gRPC access log or OTel access log exporter, these metadata fields
 appear as attributes on the log record.
@@ -198,9 +198,9 @@ luwes.status=200
 
 ```
 examples/observability/
-  observability.go   -- Factory (metrics), Filter (all three signals)
-  cmd/main.go        -- Wiring: Register + RegisterHttpFilterConfigFactories
-  envoy.yaml         -- Listener + access log format with metadata fields
+  observability.go   Factory (metrics), Filter (all three signals)
+  cmd/main.go        Wiring: Register + RegisterHttpFilterConfigFactories
+  envoy.yaml         Listener + access log format with metadata fields
 ```
 
 ## Key patterns
@@ -212,7 +212,7 @@ would allocate on every request. Call them once in `NewFactory`.
 **No-tag metrics for the hot path.** `IncrementCounterValue(id, 1)` with no
 variadic args is a single atomic add. No slice allocation, no symbol table write.
 Tag-keyed metrics (`IncrementCounterValue(id, 1, "GET")`) add one slice alloc and
-one symbol table write per request -- acceptable only when the tag value is
+one symbol table write per request, acceptable only when the tag value is
 bounded and the dimension is worth it.
 
 **SetMetadata over Log for structured access log fields.** `handle.Log` emits a

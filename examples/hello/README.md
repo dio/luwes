@@ -59,7 +59,7 @@ In a separate terminal:
 # Check Envoy is ready
 curl http://127.0.0.1:9901/ready
 
-# Send a request -- check for x-hello header
+# Send a request, check for x-hello header
 curl -si http://localhost:10000/some/path
 ```
 
@@ -94,9 +94,9 @@ curl -si http://localhost:10000/
 
 ```
 examples/hello/
-  hello.go       -- Filter and Factory types, OnRequestHeaders, OnResponseHeaders
-  cmd/main.go    -- Wiring: Register + RegisterHttpFilterConfigFactories
-  envoy.yaml     -- Minimal Envoy config: one listener, direct_response backend
+  hello.go       Filter and Factory types, OnRequestHeaders, OnResponseHeaders
+  cmd/main.go    Wiring: Register + RegisterHttpFilterConfigFactories
+  envoy.yaml     Minimal Envoy config: one listener, direct_response backend
 ```
 
 `cmd/main.go` is 13 lines. The composition layer (`sdk.Register`) eliminates

@@ -69,7 +69,7 @@ In a separate terminal:
 # Check Envoy is ready
 curl http://127.0.0.1:9901/ready
 
-# Request without key -- expect 401
+# Request without key (expect 401)
 curl -si http://localhost:10000/
 ```
 
@@ -80,7 +80,7 @@ HTTP/1.1 401 Unauthorized
 ```
 
 ```sh
-# Request with key -- expect 200
+# Request with key (expect 200)
 curl -si -H "x-api-key: my-token" http://localhost:10000/
 ```
 
@@ -138,9 +138,9 @@ ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
 
 ```
 examples/header-auth/
-  header_auth.go   -- Filter, Factory with sync.Pool, OnRequestHeaders
-  cmd/main.go      -- Wiring: Register, StartPprof, RegisterHttpFilterConfigFactories
-  envoy.yaml       -- Minimal Envoy config: listener + direct_response
+  header_auth.go   Filter, Factory with sync.Pool, OnRequestHeaders
+  cmd/main.go      Wiring: Register, StartPprof, RegisterHttpFilterConfigFactories
+  envoy.yaml       Minimal Envoy config: listener + direct_response
 ```
 
 ## Key patterns
@@ -150,26 +150,26 @@ instances. `Create` gets from the pool; `OnStreamComplete` returns to the pool.
 This eliminates the per-request `*Filter` heap allocation on the hot path.
 
 **GetOne, not Get.** `GetOne` returns a value type (`UnsafeEnvoyBuffer`) with zero
-allocation. `Get` returns a `[]UnsafeEnvoyBuffer` slice -- always allocates. For
+allocation. `Get` returns a `[]UnsafeEnvoyBuffer` slice (always allocates). For
 single-value headers use `GetOne`.
 
 **ToUnsafeString for immediate use.** `key.ToUnsafeString()` returns a string
 backed by Envoy memory. Valid only during the current callback. Used here for the
-`SetHeader` call which happens in the same callback -- safe. Do not store it.
+`SetHeader` call which happens in the same callback, safe. Do not store it.
 
 ## Benchmark results (Apple M1, Envoy 1.38.0)
 
-From `make flamegraph EXAMPLE=header-auth` -- 500k requests under concurrency 200:
+From `make flamegraph EXAMPLE=header-auth`, 500k requests under concurrency 200:
 
 ```
 Type: alloc_objects
 
       flat  flat%   sum%
   491527  98.90%    getSingleHeader  (CGO boundary: valueView escapes)
-    4682   0.94%    newDymStreamPluginHandle (pool misses -- GC cleared sync.Pool)
+    4682   0.94%    newDymStreamPluginHandle (pool misses, GC cleared sync.Pool)
 ```
 
 The filter pool is working: only 4682 handle allocs over 500k requests (pool
 misses from GC cycles) vs 500k without the pool. The dominant cost is the CGO
-boundary allocation in `getSingleHeader` -- structural, present in both upstream
+boundary allocation in `getSingleHeader`, structural, present in both upstream
 SDK and luwes, not reducible at the Go layer.

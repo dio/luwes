@@ -1,5 +1,5 @@
 # Baseline benchmark results
-# Captured before any luwes optimizations (Phase 0 -- verbatim upstream SDK).
+# Captured before any luwes optimizations (Phase 0, verbatim upstream SDK).
 # Platform: darwin/arm64 (Apple M1)
 # Run: go test -bench=. -benchmem -count=3 ./bench/
 

@@ -2,7 +2,7 @@
 // and the luwes Go SDK. It is the only package in luwes that imports "C".
 //
 // Everything here is internal to the module binary. Filter authors never import
-// this package directly -- they blank-import it from their cmd/main.go:
+// this package directly; they blank-import it from their cmd/main.go:
 //
 //	import _ "github.com/dio/luwes/abi_impl"
 //
@@ -13,17 +13,17 @@
 //
 // The package is organized into four layers:
 //
-//  1. Conversion helpers -- Go<->C type bridges (stringToModuleBuffer, etc.).
+//  1. Conversion helpers: Go<->C type bridges (stringToModuleBuffer, etc.).
 //     None of these allocate; they produce view structs over existing memory.
 //
-//  2. Handle types -- dymHeaderMap, dymBodyBuffer, dymScheduler, dymSpan,
+//  2. Handle types: dymHeaderMap, dymBodyBuffer, dymScheduler, dymSpan,
 //     dymHttpFilterHandle, dymConfigHandle. Each wraps a C pointer provided by
 //     Envoy and implements the corresponding shared.* interface.
 //
-//  3. Manager -- a sharded concurrent map (manager[T]) that pins Go objects so
+//  3. Manager: a sharded concurrent map (manager[T]) that pins Go objects so
 //     their addresses can be round-tripped through C as opaque pointers.
 //
-//  4. ABI callbacks -- the //export functions that Envoy calls at well-defined
+//  4. ABI callbacks: the //export functions that Envoy calls at well-defined
 //     points in the filter lifecycle (config load, request, response, destroy).
 //
 // # Memory model
@@ -36,7 +36,7 @@
 // # CGO escape
 //
 // Any local variable whose address is passed to a C function escapes to the
-// heap -- CGO requires the GC to be able to pin the object, and the GC only
+// heap. CGO requires the GC to be able to pin the object, and the GC only
 // pins heap objects. Stack-allocated locals are not eligible. This is the root
 // cause of the valueView allocation in getSingleHeader. It is structural and
 // cannot be fixed without an ABI change (see RATIONALE.md).
@@ -44,7 +44,7 @@
 // # Handle pool
 //
 // dymHttpFilterHandle is pooled via sync.Pool. The pool return point is
-// on_http_filter_destroy -- the guaranteed-last callback for a filter instance.
+// on_http_filter_destroy, the guaranteed-last callback for a filter instance.
 // Returning the handle in on_http_filter_stream_complete is incorrect because
 // on_http_filter_destroy can fire after stream_complete and will see a handle
 // that has already been reassigned to a different request.
@@ -95,7 +95,7 @@ const numManagerShards = 32
 // value reduces lock contention across Envoy worker threads.
 //
 // T is one of the wrapper types (httpFilterConfigWrapper, httpFilterWrapper,
-// etc.). The manager never owns the objects -- callers allocate and the manager
+// etc.). The manager never owns the objects; callers allocate and the manager
 // only records the pointer until remove() is called.
 type manager[T any] struct {
 	data  [numManagerShards]map[uintptr]*T
@@ -153,7 +153,7 @@ var (
 )
 
 // Conversion helpers: zero-allocation Go<->C type bridges.
-// All functions produce view structs over existing memory -- no copies.
+// All functions produce view structs over existing memory, no copies.
 // Callers must ensure the source data outlives any C call that receives these
 // views; use runtime.KeepAlive where the compiler cannot prove liveness.
 
@@ -271,7 +271,7 @@ func hostLog(level shared.LogLevel, format string, args []any) {
 // headerType is the ABI constant that identifies the phase; it is set once at
 // handle initialization and never changes for the lifetime of the request.
 //
-// All reads return UnsafeEnvoyBuffer -- Envoy-owned memory valid only within
+// All reads return UnsafeEnvoyBuffer (Envoy-owned memory, valid only within
 // the current callback. Do not retain these values past the callback boundary.
 type dymHeaderMap struct {
 	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr
@@ -328,7 +328,7 @@ func (h *dymHeaderMap) GetOne(key string) shared.UnsafeEnvoyBuffer {
 
 // GetOneInto writes the first value for key directly into out via an
 // unsafe.Pointer cast, bypassing the local valueView declaration that
-// getSingleHeader requires. The caller owns out -- if it is stack-allocated
+// getSingleHeader requires. The caller owns out; if it is stack-allocated
 // (the common case), no heap allocation occurs on the hot path.
 //
 // Layout proof: UnsafeEnvoyBuffer and envoy_dynamic_module_type_envoy_buffer
@@ -668,7 +668,7 @@ func (s *dymChildSpan) Finish() {
 // callbacks.
 //
 // Instances are pooled in dymHttpFilterHandlePool. Pool return happens only in
-// on_http_filter_destroy -- never in on_http_filter_stream_complete. See the
+// on_http_filter_destroy, never in on_http_filter_stream_complete. See the
 // package doc and RATIONALE.md for why.
 type dymHttpFilterHandle struct {
 	hostPluginPtr C.envoy_dynamic_module_type_http_filter_envoy_ptr
@@ -1698,7 +1698,7 @@ func (h *dymHttpFilterHandle) IncrementCounterValue(id shared.MetricID,
 
 // dymHttpFilterHandlePool is a pool of *dymHttpFilterHandle.
 // Eliminates one heap allocation per request on the hot path.
-// sync.Pool is non-deterministic -- the GC may clear it at any cycle.
+// sync.Pool is non-deterministic; the GC may clear it at any cycle.
 // That is intentional: we never need a handle to outlive a request.
 var dymHttpFilterHandlePool = sync.Pool{
 	New: func() any { return &dymHttpFilterHandle{} },
@@ -1722,7 +1722,7 @@ func (h *dymHttpFilterHandle) reset(
 
 	// Invariant checks: a handle coming off the pool must have nil plugin and
 	// scheduler. The destroy callback zeros both before Put, so a non-nil value
-	// here means something accessed the handle after it was returned -- a
+	// here means something accessed the handle after it was returned, a
 	// use-after-Put bug that would silently corrupt the next request's state.
 	if h.plugin != nil {
 		panic("BUG: handle pool corruption: plugin field still set when handle was reused from pool")
@@ -1750,7 +1750,7 @@ func (h *dymHttpFilterHandle) reset(
 	h.streamDestoried = false
 	h.localResponseSent = false
 
-	// nil maps -- lazy-init on first callout/stream use.
+	// nil maps, lazy-init on first callout/stream use.
 	h.calloutCallbacks = nil
 	h.streamCallbacks = nil
 
@@ -1998,7 +1998,7 @@ func (h *dymRouteConfigHandle) DefineCounter(name string,
 	return 0, shared.MetricsFrozen
 }
 
-// ABI callbacks -- functions exported to C that Envoy calls at specific points
+// ABI callbacks: functions exported to C that Envoy calls at specific points
 // in the filter lifecycle. Names match the ABI contract defined in abi/abi.h.
 // These are the only functions with C linkage in the package.
 

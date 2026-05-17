@@ -41,10 +41,10 @@ func (f *fakeConfigHandle) GetScheduler() shared.Scheduler                      
 // NOTE: reports 1 alloc/op on the fake (var key shared.UnsafeEnvoyBuffer escapes
 // to heap because OnRequestHeaders exceeds the inliner budget and the interface
 // call on headers is conservative). The real CGO path under live Envoy shows 0
-// allocs/op -- confirmed by the flamegraph in bench/profiles/.
+// allocs/op, confirmed by the flamegraph in bench/profiles/.
 func BenchmarkHeaderAuthAccept(b *testing.B) {
 	factory, _ := headerauth.NewFactory(&fakeConfigHandle{}, nil)
-	// BenchFilterHandle: zero-alloc Set/Add -- no mutation recording noise.
+	// BenchFilterHandle: zero-alloc Set/Add (no mutation recording noise).
 	// x-user-id is pre-populated so Set is an overwrite, not a map expansion.
 	fh := fake.NewBenchFilterHandle(
 		fake.WithHeaders(map[string]string{
@@ -67,7 +67,7 @@ func BenchmarkHeaderAuthAccept(b *testing.B) {
 }
 
 // BenchmarkHeaderAuthReject benchmarks the reject path (missing x-api-key).
-// SendLocalResponse allocates -- this documents the cost, not eliminates it.
+// SendLocalResponse allocates; this documents the cost, not eliminates it.
 func BenchmarkHeaderAuthReject(b *testing.B) {
 	factory, _ := headerauth.NewFactory(&fakeConfigHandle{}, nil)
 	fh := fake.NewFilterHandle(
@@ -87,7 +87,7 @@ func BenchmarkHeaderAuthReject(b *testing.B) {
 	}
 }
 
-// BenchmarkGetOne benchmarks HeaderMap.GetOne -- the zero-alloc header read path.
+// BenchmarkGetOne benchmarks HeaderMap.GetOne: the zero-alloc header read path.
 func BenchmarkGetOne(b *testing.B) {
 	fh := fake.NewFakeHeaderMap(map[string]string{
 		"authorization": "Bearer token",
@@ -103,7 +103,7 @@ func BenchmarkGetOne(b *testing.B) {
 	}
 }
 
-// BenchmarkGetOneInto benchmarks HeaderMap.GetOneInto -- the v2 zero-allocation
+// BenchmarkGetOneInto benchmarks HeaderMap.GetOneInto: the v2 zero-allocation
 // path where the caller provides the destination buffer. On the real CGO path
 // this eliminates the &valueView heap escape that GetOne incurs. On the fake
 // (pure Go) both are zero-alloc, but the benchmark documents the intended usage
@@ -124,7 +124,7 @@ func BenchmarkGetOneInto(b *testing.B) {
 	}
 }
 
-// BenchmarkGet benchmarks HeaderMap.Get -- allocates even on a hit.
+// BenchmarkGet benchmarks HeaderMap.Get: allocates even on a hit.
 // Baseline to compare against GetOne.
 func BenchmarkGet(b *testing.B) {
 	fh := fake.NewFakeHeaderMap(map[string]string{
@@ -179,7 +179,7 @@ func BenchmarkGetAll(b *testing.B) {
 }
 
 // BenchmarkGetChunks benchmarks BodyBuffer.GetChunks with a 1KB body.
-// Fake returns a single chunk -- documents baseline per-call cost.
+// Fake returns a single chunk; documents baseline per-call cost.
 func BenchmarkGetChunks(b *testing.B) {
 	body := make([]byte, 1024)
 	fb := fake.NewFakeBodyBuffer(body)
@@ -192,7 +192,7 @@ func BenchmarkGetChunks(b *testing.B) {
 	}
 }
 
-// BenchmarkFilterCreate benchmarks factory.Create -- the per-request filter allocation.
+// BenchmarkFilterCreate benchmarks factory.Create: the per-request filter allocation.
 // This is the highest-priority optimization target (handle pool).
 func BenchmarkFilterCreate(b *testing.B) {
 	factory, _ := headerauth.NewFactory(&fakeConfigHandle{}, nil)

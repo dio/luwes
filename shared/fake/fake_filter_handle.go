@@ -53,7 +53,7 @@ func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 // FakeFilterHandle implements shared.HttpFilterHandle for unit tests and benchmarks.
 // It records mutations so tests can assert on side effects.
 //
-// Not all methods are implemented -- only those needed for the hot path.
+// Not all methods are implemented; only those needed for the hot path.
 // Methods that would require a real Envoy scheduler are no-ops; tests that
 // need async behaviour should use the real e2e test suite.
 type FakeFilterHandle struct {
@@ -208,7 +208,7 @@ func (h *FakeFilterHandle) GetMostSpecificConfig() any { return nil }
 func (h *FakeFilterHandle) Log(_ shared.LogLevel, _ string, _ ...any) {}
 func (h *FakeFilterHandle) LogEnabled(_ shared.LogLevel) bool         { return false }
 
-// -- Scheduler (no-op -- use e2e tests for async behaviour) --
+// -- Scheduler (no-op; use e2e tests for async behaviour) --
 
 func (h *FakeFilterHandle) GetScheduler() shared.Scheduler { return &fakeScheduler{} }
 

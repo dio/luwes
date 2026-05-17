@@ -16,7 +16,7 @@ package hello
 
 import "github.com/dio/luwes/shared"
 
-// Filter handles one request. No pooling here -- this is the reference
+// Filter handles one request. No pooling here; this is the reference
 // implementation that shows the raw structure. See header-auth for pooling.
 type Filter struct {
 	shared.EmptyHttpFilter
@@ -39,7 +39,7 @@ func NewFactory(_ shared.HttpFilterConfigHandle, _ []byte) (shared.HttpFilterFac
 }
 
 // OnRequestHeaders captures the path for use in the response phase.
-// GetOne is zero-alloc. We store the unsafe string -- it is valid for
+// GetOne is zero-alloc. We store the unsafe string, valid for
 // the duration of the callback and we copy it immediately into a field.
 func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
 	path := headers.GetOne(":path")
@@ -49,7 +49,7 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 }
 
 // OnResponseHeaders stamps the x-hello header. Called when Envoy has the
-// response headers ready -- the right phase for adding response headers.
+// response headers ready, the right phase for adding response headers.
 func (f *Filter) OnResponseHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
 	headers.Set("x-hello", "from-luwes path="+f.path)
 	return shared.HeadersStatusContinue
