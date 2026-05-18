@@ -63,8 +63,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
+	gopp "net/http/pprof"
 	"os"
+	"runtime/debug"
 	"sync"
 
 	"github.com/dio/luwes/shared"
@@ -152,9 +153,17 @@ var pprofOnce sync.Once
 //	GET /debug/pprof/           pprof index
 //	GET /debug/pprof/allocs     allocation profile (primary flamegraph target)
 //	GET /debug/pprof/heap       heap snapshot
+//	GET /debug/pprof/goroutine  goroutine stacks
+//	GET /debug/pprof/block      block profile
+//	GET /debug/pprof/mutex      mutex profile
+//	GET /debug/pprof/profile    CPU profile (?seconds=N)
+//	GET /debug/pprof/trace      execution trace
 //	GET /healthz                {"status":"ok"}
+//	GET /readyz                 {"status":"ok"}
+//	GET /version                {"module":"...","version":"..."}
 //
-// StartPprof is a no-op if called more than once or if the port is already in use.
+// StartPprof is a no-op if called more than once.
+// Bind errors are logged to stderr instead of swallowed.
 func StartPprof(addr string) {
 	pprofOnce.Do(func() {
 		if a := os.Getenv("LUWES_PPROF_ADDR"); a != "" {
@@ -165,18 +174,41 @@ func StartPprof(addr string) {
 		}
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
-			// Port in use or permission denied; skip silently.
-			// This is intentional: StartPprof is a best-effort helper.
+			fmt.Fprintf(os.Stderr, "[luwes] pprof bind %s: %v\n", addr, err)
 			return
 		}
 		mux := http.NewServeMux()
-		// pprof handlers registered by the _ "net/http/pprof" import
-		// into http.DefaultServeMux. Forward them here.
-		mux.HandleFunc("/debug/pprof/", http.DefaultServeMux.ServeHTTP)
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+
+		// pprof: explicit handlers, no DefaultServeMux coupling.
+		mux.HandleFunc("GET /debug/pprof/", gopp.Index)
+		mux.HandleFunc("GET /debug/pprof/cmdline", gopp.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", gopp.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", gopp.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", gopp.Trace)
+		for _, name := range []string{"goroutine", "heap", "allocs", "block", "mutex", "threadcreate"} {
+			mux.Handle("GET /debug/pprof/"+name, gopp.Handler(name))
+		}
+
+		health := func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+		}
+		mux.HandleFunc("GET /healthz", health)
+		mux.HandleFunc("GET /readyz", health)
+
+		mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			info, ok := debug.ReadBuildInfo()
+			if !ok {
+				json.NewEncoder(w).Encode(map[string]string{"module": "unknown", "version": "unknown"}) //nolint:errcheck
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{ //nolint:errcheck
+				"module":  info.Main.Path,
+				"version": info.Main.Version,
+			})
 		})
+
 		srv := &http.Server{Handler: mux}
 		go srv.Serve(ln) //nolint:errcheck
 		fmt.Fprintf(os.Stderr, "[luwes] pprof on http://%s/debug/pprof/\n", ln.Addr())
