@@ -17,23 +17,6 @@ lifecycle control, access to the complete attribute and span API surface.
 | [request-logger](request-logger/) | Full request recorder: headers, body, OTel span tags, DuckDB analysis |
 | [observability](observability/) | Metrics (counter + histogram), tracing (span tags + child spans), structured log enrichment |
 
-### request-logger quick start
-
-```sh
-# Terminal 1: backend
-go run ./examples/request-logger/testserver
-
-# Terminal 2: build filter + start Envoy
-make build EXAMPLE=request-logger
-make run   EXAMPLE=request-logger
-
-# Terminal 3: send requests (covers 200, 500, 404, slow, cancelled/DC, LLM POST)
-go run ./examples/request-logger/testclient
-```
-
-Check Envoy stdout for one JSON access log record per request, including
-`response_flags`, `error_details`, and `upstream_failure` from the filter.
-
 ## sahl examples
 
 These examples use [sahl](../sahl/): the ergonomic layer built on top of luwes.
@@ -49,21 +32,6 @@ observation, callouts, and per-listener factory isolation.
 | [sahl/sse-tap](../sahl/examples/sse-tap/) | Response observer: zero-latency SSE token counting, `HeadTail` ring |
 | [sahl/spa](../sahl/examples/spa/) | Embedded Vite SPA (`//go:embed`) + JSON API handler, two filters in one .so |
 | [sahl/request-ui](../sahl/examples/request-ui/) | E2e request recorder: Postgres or in-memory sink, SSE live UI, Docker Compose |
-
-### request-ui quick start (zero dependencies)
-
-```sh
-# Build simulate binary
-go build -o /tmp/requi-simulate ./sahl/examples/request-ui/cmd/simulate/
-
-# Run with in-memory store (no Postgres, no Docker)
-REQUI_ADDR=0.0.0.0:6062 /tmp/requi-simulate
-
-# Open http://localhost:6062/
-```
-
-The UI shows a live table of synthetic requests (success, errors, slow,
-upstream reset, circuit breaker, timeout, downstream cancellation).
 
 ## Build any example
 
