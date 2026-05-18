@@ -179,7 +179,7 @@ func (f *sahlFilter) OnRequestBody(body shared.BodyBuffer, endStream bool) share
 		return shared.BodyStatusContinue
 	}
 	if f.handler.bodyAware {
-		// Still accumulating body -- keep buffering.
+		// Still accumulating body; keep buffering.
 		return shared.BodyStatusStopAndBuffer
 	}
 	// Non-body-aware filter: pass request body through immediately.

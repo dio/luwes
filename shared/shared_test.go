@@ -181,7 +181,7 @@ func TestResponseFlagsString_UnknownBit(t *testing.T) {
 }
 
 func TestResponseFlagsString_AllKnownFlags(t *testing.T) {
-	// All 26 known bits set -- result must contain all short names
+	// All 26 known bits set; result must contain all short names
 	var mask uint64
 	for i := 0; i < 26; i++ {
 		mask |= 1 << uint(i)

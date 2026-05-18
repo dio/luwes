@@ -89,7 +89,7 @@ func Register(name string, s *sink.Sink, pending *PendingRecords) {
 
 			// Headers call: StatusCode != 0, Data == nil.
 			// All metadata is available here via attributes. Emit immediately
-			// unless RecordResponseBody is on -- in that case stash state and
+			// unless RecordResponseBody is on; stash state and
 			// emit on EndStream so we can include the body.
 			if chunk.StatusCode != 0 {
 				st := statePool.Get().(*reqState)
@@ -141,7 +141,7 @@ func Register(name string, s *sink.Sink, pending *PendingRecords) {
 				return
 			}
 
-			// Body call -- only reached when RecordResponseBody is true.
+			// Body call: only reached when RecordResponseBody is true.
 			if *chunk.Context == nil {
 				return
 			}

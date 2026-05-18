@@ -470,7 +470,7 @@ static_resources:
                             status: 200
                             body: { inline_string: "user ok" }
 
-    # Port 10009: access logger e2e -- direct response wired with e2e-logger access logger.
+    # Port 10009: access logger e2e: direct response wired with e2e-logger access logger.
     # Used by TestAccessLogger_FinalizedFields to assert finalized stream attributes.
     - name: access-logger-e2e
       address:
