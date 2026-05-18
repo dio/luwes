@@ -248,11 +248,13 @@ tidy:
 spa-e2e: $(ENVOY_BIN)
 	ENVOY_BIN=$(ENVOY_BIN) bash sahl/examples/spa/e2e/run.sh
 
-# Build the request-ui .so for Linux amd64 and copy it to dist/ for Docker Compose.
+# Build the request-ui .so for the host Linux architecture and copy it to
+# dist/librequest-ui.so for Docker Compose. Docker Desktop on Apple Silicon
+# runs arm64 containers; on x86 it runs amd64.
 # Run this before `docker compose up` in sahl/examples/request-ui/.
 .PHONY: request-ui-docker
 request-ui-docker: $(ZIG_BIN)
-	$(MAKE) build-linux-amd64 EXAMPLE=sahl/request-ui
-	cp dist/librequest-ui.linux-amd64.so dist/librequest-ui.so
+	$(MAKE) build-linux-$(GOARCH) EXAMPLE=sahl/request-ui
+	cp dist/librequest-ui.linux-$(GOARCH).so dist/librequest-ui.so
 	@echo "dist/librequest-ui.so ready: cd sahl/examples/request-ui && docker compose up"
 

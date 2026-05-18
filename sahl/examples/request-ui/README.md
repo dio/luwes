@@ -139,18 +139,21 @@ Enable only when you need prompt/completion-level debugging.
 
 ## Quick start (Docker Compose)
 
-**1. Build the .so for Linux amd64 (cross-compile from Mac or run on Linux):**
+**1. Build the .so for the correct Linux architecture:**
+
+Docker Desktop on Apple Silicon runs arm64 containers; on x86 it runs amd64.
+The `request-ui-docker` target detects your host arch automatically:
 
 ```sh
-# From the repo root -- builds and copies in one step:
+# From the repo root:
 make request-ui-docker
 ```
 
-Or manually:
+Or manually (replace `arm64` with `amd64` on x86):
 
 ```sh
-make build-linux-amd64 EXAMPLE=sahl/request-ui
-cp dist/librequest-ui.linux-amd64.so dist/librequest-ui.so
+make build-linux-arm64 EXAMPLE=sahl/request-ui
+cp dist/librequest-ui.linux-arm64.so dist/librequest-ui.so
 ```
 
 **2. Start the stack:**
