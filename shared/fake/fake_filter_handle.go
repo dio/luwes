@@ -70,6 +70,25 @@ func WithLogEnabled(enabled bool) FilterHandleOption {
 	}
 }
 
+// HTTPCalloutFn is the function signature used by WithHTTPCalloutFn.
+// It mirrors shared.HttpFilterHandle.HttpCallout exactly so tests can fire
+// the callback inline (synchronous) to simulate Envoy worker-thread delivery.
+type HTTPCalloutFn func(
+	cluster string,
+	headers [][2]string,
+	body []byte,
+	timeoutMs uint64,
+	cb shared.HttpCalloutCallback,
+) (shared.HttpCalloutInitResult, uint64)
+
+// WithHTTPCalloutFn replaces the default no-op HttpCallout stub with fn.
+// Use this to simulate upstream responses in unit tests without a real Envoy.
+func WithHTTPCalloutFn(fn HTTPCalloutFn) FilterHandleOption {
+	return func(h *FakeFilterHandle) {
+		h.httpCalloutFn = fn
+	}
+}
+
 // NewFilterHandle constructs a FakeFilterHandle with the given options.
 func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 	h := &FakeFilterHandle{
@@ -105,6 +124,7 @@ type FakeFilterHandle struct {
 	metadata         map[string]map[string]any
 	activeSpan       shared.Span
 	logEnabled       bool
+	httpCalloutFn    HTTPCalloutFn
 
 	// Recorded side effects for assertions.
 	LocalResponses    []LocalResponse
@@ -276,7 +296,10 @@ func (s *fakeScheduler) Schedule(fn func()) { fn() } // synchronous in tests
 
 // -- HTTP callout / stream (no-op) --
 
-func (h *FakeFilterHandle) HttpCallout(_ string, _ [][2]string, _ []byte, _ uint64, _ shared.HttpCalloutCallback) (shared.HttpCalloutInitResult, uint64) {
+func (h *FakeFilterHandle) HttpCallout(cluster string, headers [][2]string, body []byte, timeoutMs uint64, cb shared.HttpCalloutCallback) (shared.HttpCalloutInitResult, uint64) {
+	if h.httpCalloutFn != nil {
+		return h.httpCalloutFn(cluster, headers, body, timeoutMs, cb)
+	}
 	return shared.HttpCalloutInitClusterNotFound, 0
 }
 func (h *FakeFilterHandle) StartHttpStream(_ string, _ [][2]string, _ []byte, _ bool, _ uint64, _ shared.HttpStreamCallback) (shared.HttpCalloutInitResult, uint64) {

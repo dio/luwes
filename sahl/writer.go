@@ -26,6 +26,13 @@ type Writer struct {
 	goStarted bool
 	goCtx     context.Context
 	goCancel  context.CancelFunc
+
+	// HTTPCallout() state
+	calloutStarted bool
+	calloutFn      HTTPCalloutFunc
+	// calloutCB is set by sahlFilter before w is handed to the handler.
+	// It holds a back-reference so OnHttpCalloutDone can flush after fn runs.
+	calloutCB shared.HttpCalloutCallback
 }
 
 type headerMut struct{ key, value string }
@@ -65,6 +72,9 @@ func (w *Writer) reset(handle shared.HttpFilterHandle, scheduler shared.Schedule
 	w.goStarted = false
 	w.goCtx = nil
 	w.goCancel = nil
+	w.calloutStarted = false
+	w.calloutFn = nil
+	w.calloutCB = nil
 }
 
 // Send sends a local HTTP response to the downstream client with the given

@@ -128,6 +128,7 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 	f.req = req
 
 	w := getWriter(f.handle, scheduler)
+	w.calloutCB = f // sahlFilter implements shared.HttpCalloutCallback
 	f.writer = w
 
 	// Body-aware filters defer handler execution to OnRequestBody(endStream=true).
@@ -139,9 +140,9 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 	// Run the request handler synchronously on the worker thread.
 	f.handler.handler(w, req)
 
-	if w.goStarted {
-		// Handler called w.Go(): goroutine is running, worker thread released.
-		// Envoy will call ContinueRequest from the scheduler callback in flush().
+	if w.goStarted || w.calloutStarted {
+		// Handler called w.Go() or w.HTTPCallout(): worker thread released.
+		// Envoy will call ContinueRequest from the scheduler/callout callback in flush().
 		return shared.HeadersStatusStop
 	}
 
@@ -183,6 +184,24 @@ func (f *sahlFilter) OnResponseBody(body shared.BodyBuffer, endStream bool) shar
 		f.onResponseBody(body, endStream)
 	}
 	return shared.BodyStatusContinue
+}
+
+// OnHttpCalloutDone implements shared.HttpCalloutCallback.
+// It runs on the Envoy worker thread when the callout response arrives.
+func (f *sahlFilter) OnHttpCalloutDone(
+	calloutID uint64,
+	result shared.HttpCalloutResult,
+	headers [][2]shared.UnsafeEnvoyBuffer,
+	body []shared.UnsafeEnvoyBuffer,
+) {
+	w := f.writer
+	if w == nil || w.calloutFn == nil {
+		return
+	}
+	fn := w.calloutFn
+	w.calloutFn = nil
+	fn(result, headers, body)
+	w.flush(true)
 }
 
 func (f *sahlFilter) OnStreamComplete() {
