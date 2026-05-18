@@ -2,20 +2,22 @@ package llmproxy
 
 import (
 	"bytes"
+	"unsafe"
 
 	"github.com/tidwall/gjson"
 )
 
 // modelFromBody extracts the "model" field value from a JSON request body.
-// Zero-alloc: unsafe.String in ToUnsafeString avoids copying the Envoy buffer,
-// and gjson.Get on a string input does not allocate for simple unescaped values.
+// Zero-alloc: unsafe.String converts the Envoy-owned []byte to a string without
+// copying, and gjson.Get on a string input does not allocate for unescaped values.
 // The returned string is a sub-slice of body's backing memory: valid only for
 // the duration of the current Envoy callback.
 func modelFromBody(body []byte) string {
 	if len(body) == 0 {
 		return ""
 	}
-	return gjson.GetBytes(body, "model").String()
+	s := unsafe.String(unsafe.SliceData(body), len(body))
+	return gjson.Get(s, "model").Str
 }
 
 // routeEntry maps a model name prefix to an Envoy cluster name.

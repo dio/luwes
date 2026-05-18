@@ -193,15 +193,11 @@ examples/llm-proxy/
 the body before calling `OnRequestBody`. Only `OnRequestBody` with `endStream=true`
 does real work. Non-final chunks return `BodyStatusStopAndBuffer` to keep buffering.
 
-**gjson for model extraction.** `modelFromBody` calls `gjson.GetBytes(body, "model")`.
-`gjson.GetBytes` does one internal `string(data)` conversion; beyond that, `.Str` is a
-sub-slice of the input with no additional copy. The tradeoff vs the previous hand-rolled
-`scanModel`: +1 alloc per request, -80 lines of bespoke scanner code, full JSON correctness
-(handles escapes, nested objects, whitespace variants without manual edge cases).
-
-**Zero-alloc scan.** `resolveCluster` takes the model string and walks the static prefix
-array with `bytes.HasPrefix`. Short model names (under ~32 bytes) keep the `[]byte`
-conversion on the stack. No map, no hash, no allocation.
+**gjson for model extraction.** `modelFromBody` uses `unsafe.String` to convert
+the Envoy-owned `[]byte` to a string without copying, then calls `gjson.Get(s, "model").Str`.
+`gjson.Get` on a string input is 0 allocs for unescaped values: it returns a `Result`
+whose `.Str` field is a sub-slice of the input string. No heap.
+`gjson.GetBytes` would cost 1 alloc (internal `string(data)` conversion) -- use `Get`.
 
 **cluster_header routing.** Rather than modifying xDS or using per-request metadata,
 the filter writes `x-cluster: <cluster>` and calls `ClearRouteCache`. Envoy's
@@ -224,11 +220,11 @@ via `ring.Reset()` in `Factory.Create`. No per-request allocation for the ring.
 Benchmark on the fake handle (eliminates ABI-level noise):
 
 ```
-BenchmarkLLMProxy_ModelRouting-8   8M ops   160 ns/op   8 B/op   1 allocs/op
+BenchmarkLLMProxy_ModelRouting-8   16M ops   72 ns/op   0 B/op   0 allocs/op
 ```
 
-The 1 alloc is `gjson.GetBytes` doing an internal `string(data)` conversion.
-`resolveCluster`, pool get/put, and ring reset are all 0-alloc.
+`modelFromBody` (`unsafe.String` + `gjson.Get`), `resolveCluster`, pool get/put,
+and ring reset are all 0-alloc.
 
 On real Envoy with `CGO_ENABLED=1`, two additional ABI-level allocations apply:
 
