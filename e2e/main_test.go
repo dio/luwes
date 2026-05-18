@@ -30,6 +30,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/dio/luwes/e2e/accessloggersink"
 )
 
 const (
@@ -47,7 +49,9 @@ const (
 	doSahlAddr = "http://localhost:10007"
 	// Port 10008: mutable-body-sahl filter (RegisterWithMutableResponse + ResponseFlags)
 	mutableBodySahlAddr = "http://localhost:10008"
-	adminAddr           = "http://localhost:9901"
+	// Port 10009: access logger e2e (direct response + e2e-logger access logger)
+	accessLoggerAddr = "http://localhost:10009"
+	adminAddr        = "http://localhost:9901"
 )
 
 var (
@@ -74,6 +78,9 @@ func TestMain(m *testing.M) {
 	calloutPort := startMockCalloutServer()
 	fmt.Fprintf(os.Stderr, "e2e: mock callout upstream listening on 127.0.0.1:%d\n", calloutPort)
 
+	sinkURL := accessloggersink.StartSink()
+	fmt.Fprintf(os.Stderr, "e2e: access logger sink at %s\n", sinkURL)
+
 	soPath := filepath.Join(projectRoot, "libe2e.so")
 
 	if os.Getenv("LUWES_SKIP_BUILD") == "" {
@@ -96,7 +103,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "e2e: reusing existing libe2e.so (LUWES_SKIP_BUILD=1)")
 	}
 
-	cfgPath := writeEnvoyConfig(sseUpstreamPort, calloutPort)
+	cfgPath := writeEnvoyConfig(sseUpstreamPort, calloutPort, sinkURL)
 	defer os.Remove(cfgPath)
 
 	envoyCmd = exec.Command(bin,
@@ -159,7 +166,7 @@ func waitReady(timeout time.Duration) bool {
 	return false
 }
 
-func writeEnvoyConfig(sseUpstreamPort, calloutUpstreamPort int) string {
+func writeEnvoyConfig(sseUpstreamPort, calloutUpstreamPort int, accessLoggerSinkURL string) string {
 	cfg := fmt.Sprintf(`
 static_resources:
   listeners:
@@ -463,6 +470,42 @@ static_resources:
                             status: 200
                             body: { inline_string: "user ok" }
 
+    # Port 10009: access logger e2e -- direct response wired with e2e-logger access logger.
+    # Used by TestAccessLogger_FinalizedFields to assert finalized stream attributes.
+    - name: access-logger-e2e
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10009 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: access_logger_e2e
+                access_log:
+                  - name: envoy.access_loggers.dynamic_modules
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.dynamic_modules.v3.DynamicModuleAccessLog
+                      dynamic_module_config:
+                        name: e2e
+                      logger_name: e2e-logger
+                      logger_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{"sink_url":"%s"}'
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: access_logger_e2e
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "access-logger-ok" }
+
   clusters:
     - name: sse_upstream
       connect_timeout: 5s
@@ -500,7 +543,7 @@ static_resources:
 admin:
   address:
     socket_address: { address: 127.0.0.1, port_value: 9901 }
-`, sseUpstreamPort, calloutUpstreamPort)
+`, accessLoggerSinkURL, sseUpstreamPort, calloutUpstreamPort)
 
 	f, err := os.CreateTemp("", "luwes-e2e-*.yaml")
 	if err != nil {

@@ -92,7 +92,7 @@ func get(c *http.Client, path string) result {
 	if err != nil {
 		return result{"GET", path, 0, dur, err}
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return result{"GET", path, resp.StatusCode, dur, nil}
 }
 
@@ -109,7 +109,7 @@ func cancelledGet(c *http.Client, path string, timeout time.Duration) result {
 	if err != nil {
 		return result{"GET", path + " (cancelled)", 0, dur, nil}
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return result{"GET", path, resp.StatusCode, dur, nil}
 }
 
@@ -121,7 +121,7 @@ func post(c *http.Client, path string, body any) result {
 	if err != nil {
 		return result{"POST", path, 0, dur, err}
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return result{"POST", path, resp.StatusCode, dur, nil}
 }
 

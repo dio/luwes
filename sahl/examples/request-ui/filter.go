@@ -3,15 +3,9 @@
 //
 // Per-request state is initialized in the response handler's headers call
 // (when chunk.StatusCode != 0) and accumulated through body chunks until
-// EndStream. Request-side fields (method, path, host, request headers, body)
-// that sahl gives us on the request side are stored in package-level vars
-// scoped per worker -- but sahl runs everything on Envoy worker threads
-// (single-threaded per request), so the ResponseChunk.Context slot is
-// the correct mechanism: we initialize state there in the headers call.
-//
-// The one complication: request body (if RecordRequestBody=true) is only
-// available in the request handler. We store it in a sync.Map keyed by
-// x-request-id, then retrieve it in the response handler.
+// EndStream. Request-side fields (method, path, host, request headers)
+// that are readable in the response path come from attributes on the Writer.
+// The ResponseChunk.Context slot carries per-request state across callbacks.
 package requestui
 
 import (
@@ -33,10 +27,6 @@ var (
 		RecordResponseHeaders: true,
 		MaxBodyBytes:          defaultMaxBody,
 	}
-	// bodyCache stores request bodies keyed by x-request-id for hand-off
-	// from the request handler to the response handler.
-	// Entries are deleted after the response handler emits the record.
-	bodyCache sync.Map
 )
 
 type filterConfig struct {
@@ -68,8 +58,8 @@ var statePool = sync.Pool{New: func() any { return &reqState{} }}
 
 // Register wires the filter into the sahl registry.
 // Call from init() in cmd/main.go after constructing the sink.
-func Register(name string, s *requestuisink.Sink) {
-	sahl.RegisterWithBodyConfigAndResponse(
+func Register(name string, s *requestuisink.Sink, pending *PendingRecords) {
+	sahl.RegisterWithConfigAndResponse(
 		name,
 		func(h sahl.ConfigHandle) error {
 			raw := h.RawConfig()
@@ -88,23 +78,9 @@ func Register(name string, s *requestuisink.Sink) {
 			cfgMu.Unlock()
 			return nil
 		},
-		func(w *sahl.Writer, r *sahl.Request) {
-			cfgMu.RLock()
-			c := cfg
-			cfgMu.RUnlock()
-
-			if c.RecordRequestBody {
-				body := r.Body()
-				if len(body) > c.MaxBodyBytes {
-					body = body[:c.MaxBodyBytes]
-				}
-				if len(body) > 0 {
-					reqID := r.Header.Get("x-request-id")
-					if reqID != "" {
-						bodyCache.Store(reqID, string(body))
-					}
-				}
-			}
+		func(_ *sahl.Writer, _ *sahl.Request) {
+			// Request body recording not supported in this variant.
+			// Enable RecordRequestBody only when using RegisterWithBodyConfigAndResponse.
 		},
 		func(w *sahl.Writer, chunk *sahl.ResponseChunk) {
 			cfgMu.RLock()
@@ -112,13 +88,13 @@ func Register(name string, s *requestuisink.Sink) {
 			cfgMu.RUnlock()
 
 			// Headers call: StatusCode != 0, Data == nil.
-			// Initialize per-request state from request attributes.
+			// All metadata is available here via attributes. Emit immediately
+			// unless RecordResponseBody is on -- in that case stash state and
+			// emit on EndStream so we can include the body.
 			if chunk.StatusCode != 0 {
 				st := statePool.Get().(*reqState)
 				*st = reqState{}
-				*chunk.Context = st
 
-				// Read request identity from attributes -- available in response callbacks.
 				if v, ok := w.GetAttributeString(shared.AttributeIDRequestId); ok {
 					st.requestID = v.ToString()
 				}
@@ -131,7 +107,6 @@ func Register(name string, s *requestuisink.Sink) {
 				if v, ok := w.GetAttributeString(shared.AttributeIDRequestHost); ok {
 					st.host = v.ToString()
 				}
-
 				if span := w.ActiveSpan(); span != nil {
 					if id, ok := span.GetTraceID(); ok {
 						st.traceID = id.ToString()
@@ -140,47 +115,50 @@ func Register(name string, s *requestuisink.Sink) {
 						st.spanID = id.ToString()
 					}
 				}
-
-				if c.RecordRequestHeaders {
-					// Request headers are no longer directly accessible here.
-					// They are available via AttributeIDRequestHeaders as a serialized
-					// string on some Envoy builds. For now we skip them unless a future
-					// sahl version exposes the request HeaderMap in the response path.
-				}
-
-				// Retrieve request body stashed by the request handler.
-				if c.RecordRequestBody && st.requestID != "" {
-					if v, ok := bodyCache.LoadAndDelete(st.requestID); ok {
-						st.requestBody, _ = v.(string)
-					}
-				}
-
 				if addr, ok := w.GetAttributeString(shared.AttributeIDUpstreamAddress); ok {
 					st.upstreamAddress = addr.ToString()
 				}
-
+				// Capture Envoy-generated local reply details (upstream timeout,
+				// circuit breaker, rate limit). Non-empty only when Envoy
+				// synthesized the response rather than forwarding from upstream.
+				if d := w.LocalReplyDetails(); d != "" {
+					st.errorDetails = d
+				}
 				if c.RecordResponseHeaders && chunk.Headers != nil {
 					st.responseHeaders = copyHeaders(chunk.Headers.GetAll())
 				}
+
+				if c.RecordResponseBody {
+					// Defer emit until body is accumulated in the body path.
+					*chunk.Context = st
+					return
+				}
+				// Deposit partial record; the access logger enriches and sends it.
+				nr := buildRecord(chunk.StatusCode, st)
+				pending.Store(st.requestID, nr)
+				*st = reqState{}
+				statePool.Put(st)
 				return
 			}
 
-			// Body call.
+			// Body call -- only reached when RecordResponseBody is true.
+			if *chunk.Context == nil {
+				return
+			}
 			st, ok := (*chunk.Context).(*reqState)
 			if !ok || st == nil {
 				return
 			}
-
-			if c.RecordResponseBody && chunk.EndStream && len(chunk.Data) > 0 {
-				data := chunk.Data
-				if len(data) > c.MaxBodyBytes {
-					data = data[:c.MaxBodyBytes]
-				}
-				st.responseBody = string(data)
-			}
-
 			if chunk.EndStream {
-				emit(w, st, s)
+				if len(chunk.Data) > 0 {
+					data := chunk.Data
+					if len(data) > c.MaxBodyBytes {
+						data = data[:c.MaxBodyBytes]
+					}
+					st.responseBody = string(data)
+				}
+				nr := buildRecord(chunk.StatusCode, st)
+				pending.Store(st.requestID, nr)
 				*st = reqState{}
 				statePool.Put(st)
 			}
@@ -188,7 +166,10 @@ func Register(name string, s *requestuisink.Sink) {
 	)
 }
 
-func emit(w *sahl.Writer, st *reqState, s *requestuisink.Sink) {
+// buildRecord constructs a partial Record from state available at response headers time.
+// Finalized fields (duration, byte counts, flags, code_details) are left zero;
+// the access logger sets them in OnLog after stream finalization.
+func buildRecord(statusCode int, st *reqState) *requestuisink.Record {
 	r := &requestuisink.Record{
 		RequestID:       st.requestID,
 		Method:          st.method,
@@ -200,8 +181,9 @@ func emit(w *sahl.Writer, st *reqState, s *requestuisink.Sink) {
 		UpstreamAddress: st.upstreamAddress,
 		ResponseBody:    st.responseBody,
 		ErrorDetails:    st.errorDetails,
+		ResponseCode:    float64(statusCode),
+		UpstreamStatus:  statusStr(statusCode),
 	}
-
 	if len(st.requestHeaders) > 0 {
 		if b, err := json.Marshal(st.requestHeaders); err == nil {
 			r.RequestHeaders = string(b)
@@ -212,32 +194,7 @@ func emit(w *sahl.Writer, st *reqState, s *requestuisink.Sink) {
 			r.ResponseHeaders = string(b)
 		}
 	}
-
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDRequestDuration); ok {
-		r.DurationMs = v / 1e6
-	}
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDRequestSize); ok {
-		r.RequestSizeBytes = v
-	}
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDResponseSize); ok {
-		r.ResponseSizeBytes = v
-	}
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDResponseCode); ok {
-		r.ResponseCode = v
-		r.UpstreamStatus = statusStr(int(v))
-	}
-	if v, ok := w.GetAttributeString(shared.AttributeIDResponseFlags); ok && v.Len > 0 {
-		r.ResponseFlags = v.ToString()
-	}
-	if v, ok := w.GetAttributeString(shared.AttributeIDResponseCodeDetails); ok && v.Len > 0 {
-		r.ResponseCodeDetails = v.ToString()
-	}
-	if v, ok := w.GetAttributeString(shared.AttributeIDUpstreamTransportFailureReason); ok && v.Len > 0 {
-		r.UpstreamFailure = v.ToString()
-	}
-
-	r.HasError = hasError(r)
-	s.Send(r)
+	return r
 }
 
 func hasError(r *requestuisink.Record) bool {

@@ -17,6 +17,9 @@ static_resources:
                       dynamic_module_config:
                         name: spa
                       filter_name: api-backend
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{}'
                   # spa serves embedded ui/dist assets; falls back to index.html.
                   - name: spa
                     typed_config:
@@ -24,6 +27,9 @@ static_resources:
                       dynamic_module_config:
                         name: spa
                       filter_name: spa
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{}'
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router

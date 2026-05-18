@@ -7,7 +7,8 @@ import (
 	_ "github.com/dio/luwes/abi_impl"
 	"github.com/dio/luwes/sahl"
 
-	_ "github.com/dio/luwes/e2e/calloutfilters" // registers callout-sahl, stream-sahl, do-sahl
+	_ "github.com/dio/luwes/e2e/accessloggerfilters" // registers e2e-logger access logger
+	_ "github.com/dio/luwes/e2e/calloutfilters"      // registers callout-sahl, stream-sahl, do-sahl
 	headerauth "github.com/dio/luwes/examples/header-auth"
 	_ "github.com/dio/luwes/sahl/examples/auth" // registers via init()
 	headerauthsahl "github.com/dio/luwes/sahl/examples/header-auth"
@@ -26,6 +27,9 @@ func init() {
 	sdk.RegisterHttpFilterConfigFactories(sahl.Factories())
 
 	sdk.RegisterHttpFilterConfigFactories(sdk.Factories())
+
+	// Access logger factories: e2e-logger pushes to accessloggersink.
+	sdk.RegisterAccessLoggerConfigFactories(sdk.AccessLoggerFactories())
 }
 
 func main() {}

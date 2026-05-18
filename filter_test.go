@@ -58,3 +58,42 @@ func TestFactories_ReturnsCopy(t *testing.T) {
 	delete(a, name)
 	require.Contains(t, sdk.Factories(), name, "Factories() must return an independent copy")
 }
+
+// ---- Access logger registration ----
+
+type stubAccessLoggerHttpFactory struct{}
+
+func (f *stubAccessLoggerHttpFactory) NewLogger() shared.AccessLogger {
+	return &shared.EmptyAccessLogger{}
+}
+func (f *stubAccessLoggerHttpFactory) OnDestroy() {}
+
+func TestRegisterAccessLogger_Appears_In_AccessLoggerFactories(t *testing.T) {
+	const name = "test-access-logger-fn"
+	sdk.RegisterAccessLogger(name, func(_ shared.AccessLoggerConfigHandle, _ []byte) (shared.AccessLoggerFactory, error) {
+		return &stubAccessLoggerHttpFactory{}, nil
+	})
+	assert.Contains(t, sdk.AccessLoggerFactories(), name)
+}
+
+func TestRegisterAccessLogger_Duplicate_Panics(t *testing.T) {
+	const name = "test-access-logger-dup"
+	sdk.RegisterAccessLogger(name, func(_ shared.AccessLoggerConfigHandle, _ []byte) (shared.AccessLoggerFactory, error) {
+		return &stubAccessLoggerHttpFactory{}, nil
+	})
+	assert.Panics(t, func() {
+		sdk.RegisterAccessLogger(name, func(_ shared.AccessLoggerConfigHandle, _ []byte) (shared.AccessLoggerFactory, error) {
+			return &stubAccessLoggerHttpFactory{}, nil
+		})
+	})
+}
+
+func TestAccessLoggerFactories_ReturnsCopy(t *testing.T) {
+	const name = "test-access-logger-copy"
+	sdk.RegisterAccessLogger(name, func(_ shared.AccessLoggerConfigHandle, _ []byte) (shared.AccessLoggerFactory, error) {
+		return &stubAccessLoggerHttpFactory{}, nil
+	})
+	a := sdk.AccessLoggerFactories()
+	delete(a, name)
+	require.Contains(t, sdk.AccessLoggerFactories(), name, "AccessLoggerFactories() must return an independent copy")
+}

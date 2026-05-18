@@ -10,6 +10,7 @@ import (
 // compiled module or plugins.
 var httpFilterConfigFactoryRegistry = make(map[string]shared.HttpFilterConfigFactory)
 var networkFilterConfigFactoryRegistry = make(map[string]shared.NetworkFilterConfigFactory)
+var accessLoggerConfigFactoryRegistry = make(map[string]shared.AccessLoggerConfigFactory)
 
 // NewHttpFilterFactory creates a new plugin factory for the given plugin name and unparsed config.
 func NewHttpFilterFactory(handle shared.HttpFilterConfigHandle, name string,
@@ -62,5 +63,31 @@ func RegisterNetworkFilterConfigFactories(factories map[string]shared.NetworkFil
 			panic("network filter config factory already registered: " + name)
 		}
 		networkFilterConfigFactoryRegistry[name] = factory
+	}
+}
+
+// NewAccessLoggerFactory creates an access logger factory for the given logger name and config.
+func NewAccessLoggerFactory(handle shared.AccessLoggerConfigHandle, name string,
+	config []byte) (shared.AccessLoggerFactory, error) {
+	configFactory := accessLoggerConfigFactoryRegistry[name]
+	if configFactory == nil {
+		return nil, fmt.Errorf("no access logger config factory registered for %q", name)
+	}
+	return configFactory.Create(handle, config)
+}
+
+// GetAccessLoggerConfigFactory returns the registered config factory for the given name.
+func GetAccessLoggerConfigFactory(name string) shared.AccessLoggerConfigFactory {
+	return accessLoggerConfigFactoryRegistry[name]
+}
+
+// RegisterAccessLoggerConfigFactories registers access logger config factories.
+// This function MUST only be called from init() functions.
+func RegisterAccessLoggerConfigFactories(factories map[string]shared.AccessLoggerConfigFactory) {
+	for name, factory := range factories {
+		if _, ok := accessLoggerConfigFactoryRegistry[name]; ok {
+			panic("access logger config factory already registered: " + name)
+		}
+		accessLoggerConfigFactoryRegistry[name] = factory
 	}
 }

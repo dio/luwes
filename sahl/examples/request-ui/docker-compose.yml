@@ -17,40 +17,38 @@ services:
 
   upstream:
     image: python:3.12-alpine
-    command: >
-      python3 -c "
-      import http.server, json, time, random
-
-      class H(http.server.BaseHTTPRequestHandler):
-          def do_GET(self):
-              path = self.path
-              if path == '/slow':
-                  time.sleep(1.5)
-              if path == '/error':
-                  self.send_response(500)
-                  self.send_header('content-type', 'application/json')
-                  self.end_headers()
-                  self.wfile.write(b'{\"error\":\"internal\"}')
-                  return
-              if path == '/notfound':
-                  self.send_response(404)
-                  self.end_headers()
-                  return
-              self.send_response(200)
-              self.send_header('content-type', 'application/json')
-              self.end_headers()
-              self.wfile.write(json.dumps({'path': path, 'ok': True}).encode())
-          def do_POST(self):
-              n = int(self.headers.get('content-length', 0))
-              body = self.rfile.read(n)
-              self.send_response(200)
-              self.send_header('content-type', 'application/json')
-              self.end_headers()
-              self.wfile.write(json.dumps({'received': len(body)}).encode())
-          def log_message(self, *a): pass
-
-      http.server.HTTPServer(('0.0.0.0', 8080), H).serve_forever()
-      "
+    command:
+      - python3
+      - -c
+      - |
+        import http.server, json, time
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == '/slow':
+                    time.sleep(1.5)
+                if self.path == '/error':
+                    self.send_response(500)
+                    self.send_header('content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'{"error":"internal"}')
+                    return
+                if self.path == '/notfound':
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'path': self.path, 'ok': True}).encode())
+            def do_POST(self):
+                n = int(self.headers.get('content-length', 0))
+                body = self.rfile.read(n)
+                self.send_response(200)
+                self.send_header('content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'received': len(body)}).encode())
+            def log_message(self, *a): pass
+        http.server.HTTPServer(('0.0.0.0', 8080), H).serve_forever()
     ports:
       - "8080:8080"
 
