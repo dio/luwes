@@ -274,12 +274,12 @@ result and call `SendLocalResponse` on failure.
 
 **`OnLocalReply` is for observation, not interception.** You can read and modify
 response headers, emit metrics, and log. You cannot prevent the local reply from
-being sent -- `LocalReplyStatusContinue` and `LocalReplyStatusContinueAndResetStream`
+being sent: `LocalReplyStatusContinue` and `LocalReplyStatusContinueAndResetStream`
 both send a reply. Use `resetImminent` to skip header mutations that would be wasted
 (the TCP connection is going away).
 
 **Response flags in `OnStreamComplete`.** `GetAttributeString(AttributeIDResponseFlags)`
-returns the final flags string after the request is fully resolved -- upstream
+returns the final flags string after the request is fully resolved: upstream
 result, downstream state, and all filter decisions accounted for. This is the
 only place to observe `DC` (downstream connection termination) and correlate it
 with a specific request path and trace ID.

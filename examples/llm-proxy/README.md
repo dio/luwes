@@ -197,7 +197,7 @@ does real work. Non-final chunks return `BodyStatusStopAndBuffer` to keep buffer
 the Envoy-owned `[]byte` to a string without copying, then calls `gjson.Get(s, "model").Str`.
 `gjson.Get` on a string input is 0 allocs for unescaped values: it returns a `Result`
 whose `.Str` field is a sub-slice of the input string. No heap.
-`gjson.GetBytes` would cost 1 alloc (internal `string(data)` conversion) -- use `Get`.
+`gjson.GetBytes` would cost 1 alloc (internal `string(data)` conversion); use `Get`.
 
 **cluster_header routing.** Rather than modifying xDS or using per-request metadata,
 the filter writes `x-cluster: <cluster>` and calls `ClearRouteCache`. Envoy's

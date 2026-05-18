@@ -250,7 +250,7 @@ func (f *Filter) OnResponseBody(body shared.BodyBuffer, endStream bool) shared.B
 }
 
 // OnLocalReply captures the Envoy-generated error details string.
-// Fires on upstream timeout, circuit breaker, rate limit -- NOT on the
+// Fires on upstream timeout, circuit breaker, rate limit: NOT on the
 // filter's own SendLocalResponse calls.
 func (f *Filter) OnLocalReply(_ uint32, details shared.UnsafeEnvoyBuffer, _ bool) shared.LocalReplyStatus {
 	f.rec.errorDetails = details.ToString()
@@ -261,7 +261,7 @@ func (f *Filter) OnLocalReply(_ uint32, details shared.UnsafeEnvoyBuffer, _ bool
 // writes all fields to dynamic metadata, and emits the log record.
 //
 // All numeric and string attributes (duration, flags, code_details, upstream
-// failure reason) are only fully populated here -- after the stream resolves.
+// failure reason) are only fully populated here, after the stream resolves.
 func (f *Filter) OnStreamComplete() {
 	r := &f.rec
 	h := f.handle
