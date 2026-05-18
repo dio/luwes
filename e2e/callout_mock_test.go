@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	mockCalloutServer  *http.Server
+	mockCalloutServer   *http.Server
 	calloutUpstreamPort int
 )
 
