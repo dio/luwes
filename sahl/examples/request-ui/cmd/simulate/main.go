@@ -28,6 +28,12 @@ import (
 )
 
 func main() {
+	// Default to memory mode so simulate needs no external dependencies.
+	// Override with REQUI_MODE=postgres and REQUI_DSN=... for persistence.
+	if os.Getenv("REQUI_MODE") == "" {
+		os.Setenv("REQUI_MODE", "memory")
+	}
+
 	s := requestuisink.New()
 	s.Start()
 
