@@ -1,0 +1,94 @@
+static_resources:
+  listeners:
+    - name: request-ui
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10000 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: request_ui
+                generate_request_id: true
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          ts:          "%START_TIME%"
+                          request_id:  "%REQ(X-REQUEST-ID)%"
+                          method:      "%REQ(:METHOD)%"
+                          path:        "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                          status:      "%RESPONSE_CODE%"
+                          flags:       "%RESPONSE_FLAGS%"
+                          duration_ms: "%DURATION%"
+                          upstream:    "%UPSTREAM_HOST%"
+                          details:     "%RESPONSE_CODE_DETAILS%"
+                http_filters:
+                  - name: request-ui
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: request-ui
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: >
+                          {
+                            "record_request_headers":  true,
+                            "record_response_headers": true,
+                            "record_request_body":     false,
+                            "record_response_body":    false,
+                            "max_body_bytes":          4096
+                          }
+                  # Fault filter: injects a 5s delay on /delayed so the testclient
+                  # can cancel before upstream is reached (simulates DC flag).
+                  - name: envoy.filters.http.fault
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: request_ui
+                  virtual_hosts:
+                    - name: upstream
+                      domains: ["*"]
+                      routes:
+                        # /delayed: fault filter injects 5s delay before Envoy
+                        # connects to upstream. Cancel within that window and
+                        # upstream is never contacted. Envoy records DC flag.
+                        - match: { prefix: "/delayed" }
+                          route:
+                            cluster: upstream
+                            timeout: 30s
+                          typed_per_filter_config:
+                            envoy.filters.http.fault:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+                              delay:
+                                fixed_delay: 5s
+                                percentage:
+                                  numerator: 100
+                                  denominator: HUNDRED
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: upstream
+                            timeout: 30s
+
+  clusters:
+    # Local testserver on 127.0.0.1:11000.
+    # Use envoy.yaml (upstream:8080) for Docker Compose.
+    - name: upstream
+      connect_timeout: 5s
+      type: STATIC
+      load_assignment:
+        cluster_name: upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 11000 }
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }

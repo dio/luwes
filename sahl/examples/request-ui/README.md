@@ -90,7 +90,7 @@ of the upstream failure flags are present.
 | `-` | ok | No flags (clean request) |
 
 Flags are set on the final `response_flags` attribute in `OnStreamComplete`.
-They are NOT available in `OnResponseHeaders` -- only after the full stream
+They are NOT available in `OnResponseHeaders`: only after the full stream
 resolves. The filter reads them via `w.GetAttributeString(AttributeIDResponseFlags)`.
 
 ## `error_details` vs `response_flags` vs `response_code_details`
@@ -115,7 +115,7 @@ to the reset variants of `error_details`.
 
 **`response_code_details`** (from stream attributes): the definitive detail string
 on the completed stream. `via_upstream` means the upstream sent the response.
-Anything else is an Envoy-generated response -- same set as `error_details` but
+Anything else is an Envoy-generated response, the same set as `error_details` but
 available as an attribute rather than in `OnLocalReply`. Use this in `OnStreamComplete`
 when you need to distinguish a real upstream 503 (`via_upstream`) from an Envoy
 timeout 503 (`response_timeout`).
@@ -193,7 +193,7 @@ curl http://localhost:10000/ok
 # Upstream 500
 curl http://localhost:10000/error
 
-# Upstream timeout (upstream sleeps 1.5s; Envoy timeout is 30s -- adjust in envoy.yaml to trigger UT)
+# Upstream timeout (upstream sleeps 1.5s; Envoy timeout is 30s, adjust in envoy.yaml to trigger UT)
 curl http://localhost:10000/slow
 
 # 404 from upstream
@@ -224,15 +224,51 @@ docker run -d --name requi-pg \
 make build EXAMPLE=sahl/request-ui
 ```
 
-**3. Start Envoy:**
+**3. Start the test backend:**
+
+```sh
+go run ./sahl/examples/request-ui/testserver
+```
+
+**4. Start Envoy (uses envoy-local.yaml pointing at 127.0.0.1:11000):**
 
 ```sh
 REQUI_DSN=postgres://requi:requi@localhost:5432/requi?sslmode=disable \
 REQUI_ADDR=0.0.0.0:6062 \
+ENVOY_YAML=$(pwd)/sahl/examples/request-ui/envoy-local.yaml \
 make run EXAMPLE=sahl/request-ui
 ```
 
-**4. Open http://localhost:6062/**
+**5. Open http://localhost:6062/**
+
+**6. Run the test client:**
+
+```sh
+go run ./sahl/examples/request-ui/testclient
+```
+
+Expected output:
+
+```
+METHOD PATH                                STATUS      DUR
+------------------------------------------------------------
+GET    /ok                                    200      2ms
+GET    /health                                200      1ms
+GET    /error                                 500      3ms
+GET    /notfound                              404      1ms
+GET    /slow                                  200   1502ms
+POST   /v1/chat/completions                   200      4ms
+POST   /v1/messages                           200      3ms
+GET    /delayed (cancelled)                     -    200ms
+GET    /ok                                    200      1ms
+GET    /ok                                    200      1ms
+------------------------------------------------------------
+done: open http://localhost:6062/ to see all requests in the UI
+```
+
+Each row appears in the UI as it completes. Red rows: `has_error=true`.
+Yellow rows: `duration_ms > 500`. The `/delayed (cancelled)` row shows
+`flags=DC` in the detail panel: upstream was never contacted.
 
 ## Simulate (zero dependencies)
 
@@ -259,7 +295,7 @@ Open http://localhost:6062/ and the table starts populating immediately at
 | Timeout (UT) | 6% | red |
 | Circuit breaker (UO) | 4% | red |
 | No route (NR) | 3% | red |
-| Client disconnect (DC) | 4% | white -- not an upstream error |
+| Client disconnect (DC) | 4% | white (not an upstream error) |
 
 The ring holds 2000 records by default. Override with `REQUI_MEM_CAP=N`.
 History is lost on process exit.
@@ -280,11 +316,15 @@ sahl/examples/request-ui/
   filter.go              sahl filter: collects request/response state, emits to sink
   filter_test.go         unit tests: error detection helpers, config, pool
   sink/
-    sink.go              Postgres sink, SSE broadcaster, HTTP API
+    sink.go              Postgres + in-memory store, SSE broadcaster, HTTP API
     ui.go                embed directive for index.html
     index.html           single-page UI: SSE live table + search + detail panel
   cmd/main.go            wiring: starts sink, registers filter
-  envoy.yaml             Envoy config: listener + upstream cluster
+  cmd/simulate/main.go   zero-dep traffic generator (REQUI_MODE=memory default)
+  testserver/main.go     Go backend (go run ./testserver, port 11000)
+  testclient/main.go     Go test client (go run ./testclient, port 10000)
+  envoy.yaml             Docker Compose config (upstream:8080)
+  envoy-local.yaml       Local dev config (127.0.0.1:11000, fault filter for /delayed)
   Dockerfile             Envoy runtime image (bind-mounts the .so)
   docker-compose.yml     full stack: Postgres + upstream + Envoy + load-gen
 ```
