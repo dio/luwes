@@ -1,0 +1,165 @@
+static_resources:
+  listeners:
+    - name: request-logger
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10000 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: request_logger
+                generate_request_id: true  # ensures x-request-id on every request
+
+                # OTel tracing provider.
+                # Remove this block if you don't have an OTel collector.
+                # The filter still records all fields; span tagging is skipped
+                # when GetActiveSpan() returns nil.
+                tracing:
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_collector
+                        timeout: 0.250s
+                      service_name: request-logger
+
+                # Access log: two sinks.
+                #
+                # 1. stdout (always) -- human-readable, includes all req_log fields.
+                # 2. OTel (when otel_collector is available) -- log records carry
+                #    trace context (trace_id, span_id) so each record links to its
+                #    trace in Jaeger/Tempo without a secondary lookup.
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          request_id:           "%REQ(X-REQUEST-ID)%"
+                          method:               "%REQ(:METHOD)%"
+                          path:                 "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                          host:                 "%REQ(:AUTHORITY)%"
+                          status:               "%RESPONSE_CODE%"
+                          flags:                "%RESPONSE_FLAGS%"
+                          duration_ms:          "%DURATION%"
+                          req_bytes:            "%BYTES_RECEIVED%"
+                          resp_bytes:           "%BYTES_SENT%"
+                          upstream_host:        "%UPSTREAM_HOST%"
+                          code_details:         "%RESPONSE_CODE_DETAILS%"
+                          # Fields written by the filter via SetMetadata:
+                          trace_id:             "%DYNAMIC_METADATA(req_log:trace_id)%"
+                          span_id:              "%DYNAMIC_METADATA(req_log:span_id)%"
+                          upstream_status:      "%DYNAMIC_METADATA(req_log:upstream_status)%"
+                          upstream_address:     "%DYNAMIC_METADATA(req_log:upstream_address)%"
+                          response_flags:       "%DYNAMIC_METADATA(req_log:response_flags)%"
+                          error_details:        "%DYNAMIC_METADATA(req_log:error_details)%"
+                          upstream_failure:     "%DYNAMIC_METADATA(req_log:upstream_failure)%"
+                          request_body:         "%DYNAMIC_METADATA(req_log:request_body)%"
+                          response_body:        "%DYNAMIC_METADATA(req_log:response_body)%"
+
+                  # OTel access log exporter. Each record is a log entry in the
+                  # OTel LogRecord format with trace_id and span_id automatically
+                  # populated from the active span -- enabling log-to-trace linking
+                  # in Grafana, Tempo, or any OTLP-compatible backend.
+                  #
+                  # Uncomment when otel_collector is available:
+                  # - name: envoy.access_loggers.open_telemetry
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+                  #     common_config:
+                  #       grpc_service:
+                  #         envoy_grpc:
+                  #           cluster_name: otel_collector
+                  #         timeout: 0.250s
+                  #       transport_api_version: V3
+                  #       log_name: envoy_access
+                  #     body:
+                  #       string_value: "%REQ(:METHOD)% %REQ(:PATH)% %RESPONSE_CODE%"
+                  #     attributes:
+                  #       values:
+                  #         - key: request_id
+                  #           value: { string_value: "%REQ(X-REQUEST-ID)%" }
+                  #         - key: response_flags
+                  #           value: { string_value: "%DYNAMIC_METADATA(req_log:response_flags)%" }
+                  #         - key: error_details
+                  #           value: { string_value: "%DYNAMIC_METADATA(req_log:error_details)%" }
+                  #         - key: upstream_failure
+                  #           value: { string_value: "%DYNAMIC_METADATA(req_log:upstream_failure)%" }
+                  #         - key: trace_id
+                  #           value: { string_value: "%DYNAMIC_METADATA(req_log:trace_id)%" }
+                  #         - key: span_id
+                  #           value: { string_value: "%DYNAMIC_METADATA(req_log:span_id)%" }
+
+                http_filters:
+                  - name: request-logger
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: request-logger
+                      # Per-listener filter config. Adjust to taste.
+                      # record_request_body and record_response_body add latency
+                      # (full body buffered before forwarding). Enable only when
+                      # you need payload-level debugging.
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: >
+                          {
+                            "record_request_headers":  true,
+                            "record_response_headers": true,
+                            "record_request_body":     false,
+                            "record_response_body":    false,
+                            "max_body_bytes":          4096
+                          }
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+                route_config:
+                  name: request_logger
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: upstream
+                            timeout: 10s
+
+  clusters:
+    # upstream: the backend to record traffic for.
+    # Replace with your actual upstream service.
+    - name: upstream
+      connect_timeout: 5s
+      type: STATIC
+      load_assignment:
+        cluster_name: upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 11000 }
+
+    # otel_collector: OpenTelemetry collector for traces and access logs.
+    # Remove if not using OTel.
+    - name: otel_collector
+      connect_timeout: 1s
+      type: STATIC
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: otel_collector
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 4317 }
+
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }

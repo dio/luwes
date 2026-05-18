@@ -97,6 +97,7 @@ Use `.ToString()` or `.ToBytes()` to copy into Go memory when you need to retain
 | [header-auth](examples/header-auth/) | API key auth, sync.Pool, 0 allocs/op on hot path |
 | [llm-proxy](examples/llm-proxy/) | Model routing, SSE token tap, gjson, HeadTail ring |
 | [error-handling](examples/error-handling/) | Callout errors, OnLocalReply, response flags |
+| [request-logger](examples/request-logger/) | Full request recorder: headers, body, errors, OTel span tags, DuckDB |
 | [observability](examples/observability/) | Metrics, tracing, structured logging |
 
 Each example has an `envoy.yaml` and a `README.md` with run instructions.
