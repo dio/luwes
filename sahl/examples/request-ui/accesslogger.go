@@ -9,8 +9,6 @@
 package requestui
 
 import (
-	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/dio/luwes/sahl/examples/request-ui/sink"
@@ -114,7 +112,7 @@ func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogTy
 	if v, ok := h.GetAttributeString(shared.AttributeIDResponseCodeDetails); ok && v.Len > 0 {
 		r.ResponseCodeDetails = v.ToString()
 	}
-	if flags := responseFlags(h.GetResponseFlags()); flags != "" {
+	if flags := shared.ResponseFlagsString(h.GetResponseFlags()); flags != "" {
 		r.ResponseFlags = flags
 	}
 	if v, ok := h.GetAttributeString(shared.AttributeIDUpstreamTransportFailureReason); ok && v.Len > 0 {
@@ -163,59 +161,6 @@ func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogTy
 		r.ResponseCode >= 500
 
 	l.sink.Send(r)
-}
-
-// responseFlagNames maps CoreResponseFlag bit positions to their short string
-// representations, matching Envoy's %RESPONSE_FLAGS% access log format.
-// Indexed by bit position; must stay in sync with CoreResponseFlag in abi.h.
-var responseFlagNames = [...]string{
-	"LH",    // 0  FailedLocalHealthCheck
-	"UH",    // 1  NoHealthyUpstream
-	"UT",    // 2  UpstreamRequestTimeout
-	"LR",    // 3  LocalReset
-	"UR",    // 4  UpstreamRemoteReset
-	"UF",    // 5  UpstreamConnectionFailure
-	"UC",    // 6  UpstreamConnectionTermination
-	"UO",    // 7  UpstreamOverflow
-	"NR",    // 8  NoRouteFound
-	"DI",    // 9  DelayInjected
-	"FI",    // 10 FaultInjected
-	"RL",    // 11 RateLimited
-	"UAEX",  // 12 UnauthorizedExternalService
-	"RLSE",  // 13 RateLimitServiceError
-	"DC",    // 14 DownstreamConnectionTermination
-	"URX",   // 15 UpstreamRetryLimitExceeded
-	"SI",    // 16 StreamIdleTimeout
-	"IH",    // 17 InvalidEnvoyRequestHeaders
-	"DPE",   // 18 DownstreamProtocolError
-	"UMSDR", // 19 UpstreamMaxStreamDurationReached
-	"RFCF",  // 20 ResponseFromCacheFilter
-	"NFCF",  // 21 NoFilterConfigFound
-	"DT",    // 22 DurationTimeout
-	"UPE",   // 23 UpstreamProtocolError
-	"NC",    // 24 NoClusterFound
-	"OM",    // 25 OverloadManager
-}
-
-// responseFlags converts the access logger uint64 bitmask to Envoy's
-// human-readable flag string (e.g. "UF,UH,UT"). Bit positions match
-// CoreResponseFlag enum in abi.h.
-func responseFlags(mask uint64) string {
-	if mask == 0 {
-		return ""
-	}
-	var out []string
-	for i, name := range responseFlagNames {
-		if mask&(1<<uint(i)) != 0 {
-			out = append(out, name)
-		}
-	}
-	for i := len(responseFlagNames); i < 64; i++ {
-		if mask&(1<<uint(i)) != 0 {
-			out = append(out, fmt.Sprintf("0x%x", uint64(1)<<uint(i)))
-		}
-	}
-	return strings.Join(out, ",")
 }
 
 // buildMinimalRecord constructs a record for requests where the response handler

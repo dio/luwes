@@ -18,6 +18,11 @@
 // the interfaces to implement. Register via luwes.RegisterAccessLogger.
 package shared
 
+import (
+	"strconv"
+	"strings"
+)
+
 // TimingInfo holds finalized stream timing from Envoy StreamInfo.
 // All durations are in nanoseconds. A value of -1 means the timing is unavailable.
 type TimingInfo struct {
@@ -60,6 +65,65 @@ const (
 	AccessLogTypeUdpPeriodic                             AccessLogType = 12
 	AccessLogTypeUdpSessionEnd                           AccessLogType = 13
 )
+
+// ResponseFlagsString converts the GetResponseFlags() uint64 bitmask returned
+// by AccessLoggerHandle to Envoy's human-readable flag string (e.g. "UF,UT,DC"),
+// matching the %RESPONSE_FLAGS% access log format. Returns empty string when
+// mask is 0. Bit positions correspond to CoreResponseFlag in the Envoy ABI.
+//
+// Typical usage in an access logger:
+//
+//	flags := shared.ResponseFlagsString(h.GetResponseFlags())
+func ResponseFlagsString(mask uint64) string {
+	if mask == 0 {
+		return ""
+	}
+	var out []string
+	for i, name := range responseFlagNames {
+		if mask&(1<<uint(i)) != 0 {
+			out = append(out, name)
+		}
+	}
+	// Bits beyond the known range represent future Envoy flag additions.
+	for i := len(responseFlagNames); i < 64; i++ {
+		if mask&(1<<uint(i)) != 0 {
+			out = append(out, "0x"+strconv.FormatUint(uint64(1)<<uint(i), 16))
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// responseFlagNames maps CoreResponseFlag bit positions to their short string
+// representations, matching Envoy's %RESPONSE_FLAGS% access log format.
+// Must stay in sync with CoreResponseFlag in abi.h.
+var responseFlagNames = [...]string{
+	"LH",    // 0  FailedLocalHealthCheck
+	"UH",    // 1  NoHealthyUpstream
+	"UT",    // 2  UpstreamRequestTimeout
+	"LR",    // 3  LocalReset
+	"UR",    // 4  UpstreamRemoteReset
+	"UF",    // 5  UpstreamConnectionFailure
+	"UC",    // 6  UpstreamConnectionTermination
+	"UO",    // 7  UpstreamOverflow
+	"NR",    // 8  NoRouteFound
+	"DI",    // 9  DelayInjected
+	"FI",    // 10 FaultInjected
+	"RL",    // 11 RateLimited
+	"UAEX",  // 12 UnauthorizedExternalService
+	"RLSE",  // 13 RateLimitServiceError
+	"DC",    // 14 DownstreamConnectionTermination
+	"URX",   // 15 UpstreamRetryLimitExceeded
+	"SI",    // 16 StreamIdleTimeout
+	"IH",    // 17 InvalidEnvoyRequestHeaders
+	"DPE",   // 18 DownstreamProtocolError
+	"UMSDR", // 19 UpstreamMaxStreamDurationReached
+	"RFCF",  // 20 ResponseFromCacheFilter
+	"NFCF",  // 21 NoFilterConfigFound
+	"DT",    // 22 DurationTimeout
+	"UPE",   // 23 UpstreamProtocolError
+	"NC",    // 24 NoClusterFound
+	"OM",    // 25 OverloadManager
+}
 
 // HttpHeaderType identifies which header map to access in AccessLoggerHandle.GetHeader.
 // Corresponds to envoy_dynamic_module_type_http_header_type in abi.h.

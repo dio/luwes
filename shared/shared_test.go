@@ -157,6 +157,41 @@ func TestEmptyNetworkFilterConfigFactory_Create(t *testing.T) {
 	assert.NotNil(t, factory)
 }
 
+// -- ResponseFlagsString --
+
+func TestResponseFlagsString_Zero(t *testing.T) {
+	assert.Equal(t, "", shared.ResponseFlagsString(0))
+}
+
+func TestResponseFlagsString_SingleFlag(t *testing.T) {
+	// bit 5 = UF (UpstreamConnectionFailure)
+	assert.Equal(t, "UF", shared.ResponseFlagsString(1<<5))
+}
+
+func TestResponseFlagsString_MultipleFlags(t *testing.T) {
+	// UT (bit 2) + DC (bit 14)
+	got := shared.ResponseFlagsString((1 << 2) | (1 << 14))
+	assert.Equal(t, "UT,DC", got)
+}
+
+func TestResponseFlagsString_UnknownBit(t *testing.T) {
+	// bit 63: beyond known range, rendered as hex
+	got := shared.ResponseFlagsString(1 << 63)
+	assert.Contains(t, got, "0x")
+}
+
+func TestResponseFlagsString_AllKnownFlags(t *testing.T) {
+	// All 26 known bits set -- result must contain all short names
+	var mask uint64
+	for i := 0; i < 26; i++ {
+		mask |= 1 << uint(i)
+	}
+	got := shared.ResponseFlagsString(mask)
+	for _, name := range []string{"LH", "UH", "UT", "UF", "UC", "DC", "NR", "OM"} {
+		assert.Contains(t, got, name, "expected flag %s in %q", name, got)
+	}
+}
+
 // -- compile-time interface checks --
 
 var (
