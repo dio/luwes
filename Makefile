@@ -79,7 +79,7 @@ build-linux: build-linux-amd64 build-linux-arm64
 .PHONY: build-linux-amd64-examples
 build-linux-amd64-examples: $(ZIG_BIN)
 	@mkdir -p dist
-	@for example in hello header-auth observability; do \
+	@for example in hello header-auth llm-proxy observability; do \
 		echo "==> building $$example"; \
 		TARGET=x86_64-linux-gnu.2.28 \
 		CC=$(CURDIR)/scripts/zigcc.sh \

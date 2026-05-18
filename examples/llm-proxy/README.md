@@ -3,82 +3,163 @@
 Zero-allocation LLM proxy filter built on raw luwes (no sahl layer).
 
 Routes requests to OpenAI, Anthropic, or a default cluster based on the `model`
-field in the JSON request body. Taps SSE response streams for token usage
-without buffering the full body.
+field in the JSON request body. Taps SSE response streams for token usage without
+buffering the full body.
+
+Demonstrates:
+- `HeadersStatusStopAllAndBuffer` + `OnRequestBody` for body inspection before routing
+- Zero-alloc JSON scanning: `scanModel` returns a slice into the body, no copy
+- Static prefix routing table: no map lookup, no allocation per request
+- `cluster_header` route: model routing without xDS updates
+- HeadTail ring buffer for SSE tap: first 8 KB + last 64 KB, middle never stored
+- `sync.Pool` for filter instance and ring buffer reuse
 
 ## What it does
 
 **Request phase:**
 
-1. Returns `HeadersStatusStopAllAndBuffer` to buffer the request body.
-2. Scans the body for `"model": "<value>"` via a zero-alloc byte scanner.
-3. Maps model to cluster: `gpt-*` -> `openai`, `claude-*` -> `anthropic`, else `default`.
-4. Sets `x-cluster` header and calls `ClearRouteCache` so Envoy's `cluster_header`
-   route selects the right upstream.
+1. Returns `HeadersStatusStopAllAndBuffer` to hold the request until the body arrives.
+2. Scans the body for `"model": "<value>"` via `scanModel` (zero-alloc byte scan, returns
+   a slice into Envoy's buffer).
+3. Maps model to cluster via a static prefix table: `gpt-*` and `o1`/`o3` to `openai`,
+   `claude-*` to `anthropic`, anything else to `default`.
+4. Sets `x-cluster` and calls `ClearRouteCache` so Envoy's `cluster_header` route picks
+   the right upstream.
 5. Increments `llm_proxy_requests_total{cluster}`.
 
 **Response phase:**
 
-1. Checks `Content-Type: text/event-stream`. If absent, skips SSE tap.
-2. Writes SSE chunks into a HeadTail ring buffer (8 KB head + 64 KB tail).
-   The ring captures the first and last portions of the stream; the middle is
-   never stored. Zero added latency: `BodyStatusContinue` on every chunk.
-3. On `endStream=true`, scans head and tail for token usage in both OpenAI and
-   Anthropic SSE formats.
+1. Checks `Content-Type: text/event-stream`. Non-SSE responses pass through untouched.
+2. Writes each chunk into a HeadTail ring (8 KB head + 64 KB tail). `BodyStatusContinue`
+   on every chunk: zero added latency, data flows downstream while the ring fills.
+3. On `endStream=true`, scans head and tail for token usage in OpenAI and Anthropic SSE
+   wire formats. The middle of the stream is never stored.
 4. Emits `llm_proxy_input_tokens{cluster}` and `llm_proxy_output_tokens{cluster}`.
 
-## Allocation profile
+## Prerequisites
 
-Benchmark on the fake (eliminates ABI-level noise):
+- Go 1.22+ with CGO enabled
+- Envoy is downloaded automatically to `.bin/envoy` by `make run`
+- `hey` for load testing: `brew install hey` (optional, only needed for `make flamegraph`)
 
-```
-BenchmarkLLMProxy_ModelRouting-8   17M ops   70 ns/op   0 B/op   0 allocs/op
-```
+## Make targets
 
-On real Envoy with `CGO_ENABLED=1`, two ABI-level allocations are unavoidable:
-
-- `GetChunks()`: 2 allocs per `OnResponseBody` call (C array + Go slice conversion).
-  These are structural to the ABI, not the filter code.
-- `getSingleHeader` CGO escape: 1 alloc per `GetOneInto` call on some ABI versions.
-
-The filter code itself: `scanModel`, `resolveCluster`, pool get/put -- is 0 allocs.
-See the bench/ directory for the full baseline with real CGO.
-
-## Run
-
-Build the dynamic module:
+Run from the repo root:
 
 ```sh
-make build
+# Build the .so for the host (dev/test)
+make build EXAMPLE=llm-proxy
+
+# Start Envoy with the filter (foreground, Ctrl-C to stop)
+make run EXAMPLE=llm-proxy
+
+# Run unit tests (pure Go, no Envoy required)
+make examples/test/examples/llm-proxy
+
+# Cross-compile for Linux amd64 (what CI builds)
+make build-linux-amd64 EXAMPLE=llm-proxy
+
+# Capture a pprof flamegraph under load (requires hey)
+make flamegraph EXAMPLE=llm-proxy
 ```
 
-This produces `libllm-proxy.so` (or `.dylib` on macOS).
+## Manual steps
 
-Start Envoy:
+**1. Build**
 
 ```sh
-ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd) \
-  GODEBUG=cgocheck=0 \
-  envoy -c envoy.yaml --log-level warning
+CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
+  -o dist/libllm-proxy.so ./examples/llm-proxy/cmd
 ```
 
-Send a request:
+**2. Run Envoy**
+
+Envoy is downloaded automatically to `.bin/envoy` on first run:
 
 ```sh
+make run EXAMPLE=llm-proxy
+```
+
+Or manually:
+
+```sh
+GODEBUG=cgocheck=0 \
+ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
+.bin/envoy -c examples/llm-proxy/envoy.yaml --log-level warning
+```
+
+**3. Send requests**
+
+In a separate terminal:
+
+```sh
+# Check Envoy is ready
+curl http://127.0.0.1:9901/ready
+
+# Route to openai cluster
 curl -s http://localhost:10000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}'
+
+# Route to anthropic cluster
+curl -s http://localhost:10000/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-3-sonnet","messages":[{"role":"user","content":"hello"}]}'
+
+# Route to default cluster (unknown model)
+curl -s http://localhost:10000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemini-pro","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-Check metrics:
+**4. Check metrics**
 
 ```sh
 curl -s http://localhost:9901/stats | grep llm_proxy
 ```
 
+Expected counters after routing:
+
+```
+llm_proxy.llm_proxy_requests_total.openai: 1
+llm_proxy.llm_proxy_input_tokens.openai: <N>
+llm_proxy.llm_proxy_output_tokens.openai: <N>
+```
+
+**5. Load test**
+
+```sh
+hey -n 100000 -c 100 \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}' \
+  -m POST \
+  http://localhost:10000/v1/chat/completions
+```
+
+**6. pprof profile**
+
+After at least one request (which triggers `NewFactory` and starts the pprof server):
+
+```sh
+# Capture allocs profile under load
+hey -n 500000 -c 200 \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4","messages":[]}' \
+  -m POST \
+  http://localhost:10000/v1/chat/completions &
+sleep 2
+curl http://127.0.0.1:6061/debug/pprof/allocs -o /tmp/allocs.out
+
+# View top allocations
+go tool pprof -alloc_objects -top /tmp/allocs.out
+
+# Open flamegraph in browser
+go tool pprof -alloc_objects -http=:8080 /tmp/allocs.out
+```
+
 ## Cluster routing table
 
-Edit `scan.go` to add or reorder routes. No map lookup, static prefix scan:
+Edit `scan.go` to add or reorder prefixes. No map, static array, first match wins:
 
 ```go
 var clusterRoutes = [...]routeEntry{
@@ -89,15 +170,74 @@ var clusterRoutes = [...]routeEntry{
 }
 ```
 
-First match wins.
+`resolveCluster` converts the model string to `[]byte` once (stack-allocated for
+strings under ~32 bytes) then walks the array with `bytes.HasPrefix`. No heap.
+
+## Filter structure
+
+```
+examples/llm-proxy/
+  llm_proxy.go      Filter, Factory with sync.Pool, OnRequest*/OnResponse* callbacks
+  scan.go           scanModel (zero-alloc JSON scan), resolveCluster, routing table
+  sse.go            extractUsage: OpenAI + Anthropic SSE token extraction
+  llm_proxy_test.go filter integration tests + BenchmarkLLMProxy_ModelRouting
+  scan_test.go      unit tests + zero-alloc assertions for scanModel/resolveCluster
+  cmd/main.go       wiring: Register + RegisterHttpFilterConfigFactories
+  envoy.yaml        cluster_header route + openai/anthropic/default clusters (TLS)
+```
+
+## Key patterns
+
+**StopAllAndBuffer then scan.** `OnRequestHeaders` returns
+`HeadersStatusStopAllAndBuffer`, which tells Envoy to hold the request and buffer
+the body before calling `OnRequestBody`. Only `OnRequestBody` with `endStream=true`
+does real work. Non-final chunks return `BodyStatusStopAndBuffer` to keep buffering.
+
+**Zero-alloc scan.** `scanModel` takes a `[]byte` pointing into Envoy's buffer
+(via `GetChunks` + `ToUnsafeBytes`) and returns a sub-slice of that same buffer.
+No copy, no allocation. `resolveCluster` takes the model as a string (short strings
+stay on the stack) and walks the static prefix array.
+
+**cluster_header routing.** Rather than modifying xDS or using per-request metadata,
+the filter writes `x-cluster: <cluster>` and calls `ClearRouteCache`. Envoy's
+`cluster_header` route reads the header and routes accordingly. Zero xDS traffic,
+works with any static Envoy config.
+
+**HeadTail ring, observe mode.** The response handler never returns
+`BodyStatusStopAndWatermark`. It always returns `BodyStatusContinue`: Envoy streams
+chunks to the downstream client while the filter writes them into the ring in parallel.
+The ring captures at most 8 KB + 64 KB regardless of stream length. Token usage
+appears in the first and last events of the stream, which is exactly what the ring
+captures.
+
+**Pool covers ring allocation.** Each `Filter` in the `sync.Pool` carries its own
+`*buffer.HeadTail`. The ring is allocated once when `sync.Pool.New` runs, then reused
+via `ring.Reset()` in `Factory.Create`. No per-request allocation for the ring.
+
+## Allocation profile
+
+Benchmark on the fake handle (eliminates ABI-level noise):
+
+```
+BenchmarkLLMProxy_ModelRouting-8   17M ops   70 ns/op   0 B/op   0 allocs/op
+```
+
+On real Envoy with `CGO_ENABLED=1`, two ABI-level allocations are unavoidable:
+
+- `GetChunks()`: 2 allocs per `OnResponseBody` call (C array to Go slice conversion,
+  structural to the ABI).
+- `getSingleHeader` CGO escape: 1 alloc per `GetOneInto` call on some ABI versions.
+
+The filter code itself: `scanModel`, `resolveCluster`, pool get/put, ring write: 0 allocs.
+See `bench/` for the full baseline with real CGO.
 
 ## Difference from sahl/examples/decoder
 
-| | llm-proxy (this) | sahl/examples/decoder |
-|---|---|---|
-| Layer | raw luwes | sahl ergonomic layer |
-| Alloc floor | 0 (filter code) | 3 (sahl overhead) |
-| Body scan | zero-alloc manual scan | `json.Unmarshal` |
-| Code lines | ~150 | ~90 |
-| Response flags | no | planned |
-| Use when | max performance, 0-alloc proof | readable production code |
+|                 | llm-proxy (this)         | sahl/examples/decoder        |
+|-----------------|--------------------------|------------------------------|
+| Layer           | raw luwes                | sahl ergonomic layer         |
+| Alloc floor     | 0 (filter code)          | sahl overhead applies        |
+| Body scan       | zero-alloc manual scan   | sahl request body API        |
+| Code lines      | ~200                     | ~90                          |
+| Response tap    | HeadTail SSE ring        | planned                      |
+| Use when        | max performance, 0-alloc proof | readable production code |
