@@ -39,6 +39,12 @@ const (
 	headerAuthSahlAddr = "http://localhost:10001"
 	// Port 10002: sse-tap filter (sahl response observer)
 	sseTapAddr = "http://localhost:10002"
+	// Port 10005: callout-sahl filter (w.HTTPCallout)
+	calloutSahlAddr = "http://localhost:10005"
+	// Port 10006: stream-sahl filter (w.HTTPStream)
+	streamSahlAddr = "http://localhost:10006"
+	// Port 10007: do-sahl filter (w.Go + w.Do)
+	doSahlAddr = "http://localhost:10007"
 	adminAddr  = "http://localhost:9901"
 )
 
@@ -62,6 +68,10 @@ func TestMain(m *testing.M) {
 	sseUpstreamPort := startMockSSEServer()
 	fmt.Fprintf(os.Stderr, "e2e: mock SSE upstream listening on 127.0.0.1:%d\n", sseUpstreamPort)
 
+	// Start mock callout upstream (auth/stream routes) before Envoy.
+	calloutPort := startMockCalloutServer()
+	fmt.Fprintf(os.Stderr, "e2e: mock callout upstream listening on 127.0.0.1:%d\n", calloutPort)
+
 	soPath := filepath.Join(projectRoot, "libe2e.so")
 
 	if os.Getenv("LUWES_SKIP_BUILD") == "" {
@@ -84,7 +94,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "e2e: reusing existing libe2e.so (LUWES_SKIP_BUILD=1)")
 	}
 
-	cfgPath := writeEnvoyConfig(sseUpstreamPort)
+	cfgPath := writeEnvoyConfig(sseUpstreamPort, calloutPort)
 	defer os.Remove(cfgPath)
 
 	envoyCmd = exec.Command(bin,
@@ -119,6 +129,9 @@ func TestMain(m *testing.M) {
 	if mockSSEServer != nil {
 		mockSSEServer.Close()
 	}
+	if mockCalloutServer != nil {
+		mockCalloutServer.Close()
+	}
 	os.Exit(code)
 }
 
@@ -144,7 +157,7 @@ func waitReady(timeout time.Duration) bool {
 	return false
 }
 
-func writeEnvoyConfig(sseUpstreamPort int) string {
+func writeEnvoyConfig(sseUpstreamPort, calloutUpstreamPort int) string {
 	cfg := fmt.Sprintf(`
 static_resources:
   listeners:
@@ -247,6 +260,99 @@ static_resources:
                             cluster: sse_upstream
                             timeout: 30s
 
+    # Port 10005: callout-sahl filter (w.HTTPCallout -> callout_upstream)
+    - name: callout-sahl
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10005 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: callout_sahl
+                http_filters:
+                  - name: callout-sahl
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: callout-sahl
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: callout_sahl
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "callout ok" }
+
+    # Port 10006: stream-sahl filter (w.HTTPStream -> callout_upstream)
+    - name: stream-sahl
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10006 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: stream_sahl
+                http_filters:
+                  - name: stream-sahl
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: stream-sahl
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: stream_sahl
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "stream ok" }
+
+    # Port 10007: do-sahl filter (w.Go + w.Do -> callout_upstream)
+    - name: do-sahl
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10007 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: do_sahl
+                http_filters:
+                  - name: do-sahl
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: do-sahl
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: do_sahl
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "do ok" }
+
     # Port 10003: auth (RegisterFactory, admin listener -- key-admin, key-ops)
     - name: auth-admin
       address:
@@ -327,10 +433,21 @@ static_resources:
                   address:
                     socket_address: { address: 127.0.0.1, port_value: %d }
 
+    - name: callout_upstream
+      connect_timeout: 5s
+      type: STATIC
+      load_assignment:
+        cluster_name: callout_upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: %d }
+
 admin:
   address:
     socket_address: { address: 127.0.0.1, port_value: 9901 }
-`, sseUpstreamPort)
+`, sseUpstreamPort, calloutUpstreamPort)
 
 	f, err := os.CreateTemp("", "luwes-e2e-*.yaml")
 	if err != nil {

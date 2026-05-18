@@ -21,6 +21,7 @@ type Writer struct {
 
 	responded    bool // Send/SendBytes was called
 	routeCleared bool
+	localResp    *localResponseMut // queued local response, applied in flush
 
 	// Go() state
 	goStarted bool
@@ -33,9 +34,20 @@ type Writer struct {
 	// calloutCB is set by sahlFilter before w is handed to the handler.
 	// It holds a back-reference so OnHttpCalloutDone can flush after fn runs.
 	calloutCB shared.HttpCalloutCallback
+
+	// HTTPStream() state
+	streamStarted bool
+	streamEventFn HTTPStreamEventFunc
+	// streamCB is set by sahlFilter before w is handed to the handler.
+	streamCB shared.HttpStreamCallback
 }
 
 type headerMut struct{ key, value string }
+type localResponseMut struct {
+	statusCode uint32
+	headers    [][2]string
+	body       []byte
+}
 type metaMut struct {
 	namespace, key string
 	value          any
@@ -69,12 +81,16 @@ func (w *Writer) reset(handle shared.HttpFilterHandle, scheduler shared.Schedule
 	w.counterMuts = w.counterMuts[:0]
 	w.responded = false
 	w.routeCleared = false
+	w.localResp = nil
 	w.goStarted = false
 	w.goCtx = nil
 	w.goCancel = nil
 	w.calloutStarted = false
 	w.calloutFn = nil
 	w.calloutCB = nil
+	w.streamStarted = false
+	w.streamEventFn = nil
+	w.streamCB = nil
 }
 
 // Send sends a local HTTP response to the downstream client with the given
@@ -86,6 +102,8 @@ func (w *Writer) Send(statusCode int, body string) {
 
 // SendBytes is like Send but accepts a pre-encoded byte slice.
 // Response headers queued via SetResponseHeader are included.
+// Safe to call from inside w.Go: the actual SendLocalResponse is deferred
+// to flush() which runs on the Envoy worker thread via Scheduler.Schedule.
 func (w *Writer) SendBytes(statusCode int, body []byte) {
 	if w.responded {
 		return
@@ -97,6 +115,16 @@ func (w *Writer) SendBytes(statusCode int, body []byte) {
 		for i, m := range w.respHdrMuts {
 			headers[i] = [2]string{m.key, m.value}
 		}
+	}
+	if w.goStarted {
+		// Defer to flush(): we're inside a goroutine, handle calls must run
+		// on the Envoy worker thread. flush() is called via Scheduler.Schedule.
+		w.localResp = &localResponseMut{
+			statusCode: uint32(statusCode),
+			headers:    headers,
+			body:       body,
+		}
+		return
 	}
 	w.handle.SendLocalResponse(uint32(statusCode), headers, body, "sahl")
 }
@@ -227,6 +255,10 @@ func (w *Writer) flushResponseMutations() {
 // For synchronous handlers, the caller returns HeadersStatusContinue directly;
 // calling ContinueRequest here too would double-continue and corrupt state.
 func (w *Writer) flush(continueReq bool) {
+	if w.localResp != nil {
+		w.handle.SendLocalResponse(w.localResp.statusCode, w.localResp.headers, w.localResp.body, "sahl")
+		return
+	}
 	if w.responded {
 		return
 	}

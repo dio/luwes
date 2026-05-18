@@ -89,6 +89,23 @@ func WithHTTPCalloutFn(fn HTTPCalloutFn) FilterHandleOption {
 	}
 }
 
+// HTTPStreamFn is the function signature used by WithHTTPStreamFn.
+type HTTPStreamFn func(
+	cluster string,
+	headers [][2]string,
+	body []byte,
+	endOfStream bool,
+	timeoutMs uint64,
+	cb shared.HttpStreamCallback,
+) (shared.HttpCalloutInitResult, uint64)
+
+// WithHTTPStreamFn replaces the default no-op StartHttpStream stub with fn.
+func WithHTTPStreamFn(fn HTTPStreamFn) FilterHandleOption {
+	return func(h *FakeFilterHandle) {
+		h.httpStreamFn = fn
+	}
+}
+
 // NewFilterHandle constructs a FakeFilterHandle with the given options.
 func NewFilterHandle(opts ...FilterHandleOption) *FakeFilterHandle {
 	h := &FakeFilterHandle{
@@ -125,6 +142,7 @@ type FakeFilterHandle struct {
 	activeSpan       shared.Span
 	logEnabled       bool
 	httpCalloutFn    HTTPCalloutFn
+	httpStreamFn     HTTPStreamFn
 
 	// Recorded side effects for assertions.
 	LocalResponses    []LocalResponse
@@ -302,7 +320,10 @@ func (h *FakeFilterHandle) HttpCallout(cluster string, headers [][2]string, body
 	}
 	return shared.HttpCalloutInitClusterNotFound, 0
 }
-func (h *FakeFilterHandle) StartHttpStream(_ string, _ [][2]string, _ []byte, _ bool, _ uint64, _ shared.HttpStreamCallback) (shared.HttpCalloutInitResult, uint64) {
+func (h *FakeFilterHandle) StartHttpStream(cluster string, headers [][2]string, body []byte, endOfStream bool, timeoutMs uint64, cb shared.HttpStreamCallback) (shared.HttpCalloutInitResult, uint64) {
+	if h.httpStreamFn != nil {
+		return h.httpStreamFn(cluster, headers, body, endOfStream, timeoutMs, cb)
+	}
 	return shared.HttpCalloutInitClusterNotFound, 0
 }
 func (h *FakeFilterHandle) SendHttpStreamData(_ uint64, _ []byte, _ bool) bool  { return false }

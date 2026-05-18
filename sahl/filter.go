@@ -129,6 +129,7 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 
 	w := getWriter(f.handle, scheduler)
 	w.calloutCB = f // sahlFilter implements shared.HttpCalloutCallback
+	w.streamCB = f  // sahlFilter implements shared.HttpStreamCallback
 	f.writer = w
 
 	// Body-aware filters defer handler execution to OnRequestBody(endStream=true).
@@ -140,9 +141,9 @@ func (f *sahlFilter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.H
 	// Run the request handler synchronously on the worker thread.
 	f.handler.handler(w, req)
 
-	if w.goStarted || w.calloutStarted {
-		// Handler called w.Go() or w.HTTPCallout(): worker thread released.
-		// Envoy will call ContinueRequest from the scheduler/callout callback in flush().
+	if w.goStarted || w.calloutStarted || w.streamStarted {
+		// Handler called w.Go(), w.HTTPCallout(), or w.HTTPStream(): worker thread released.
+		// Envoy will call ContinueRequest from the scheduler/callout/stream callback in flush().
 		return shared.HeadersStatusStop
 	}
 
@@ -202,6 +203,61 @@ func (f *sahlFilter) OnHttpCalloutDone(
 	w.calloutFn = nil
 	fn(result, headers, body)
 	w.flush(true)
+}
+
+// OnHttpStreamHeaders implements shared.HttpStreamCallback.
+func (f *sahlFilter) OnHttpStreamHeaders(streamID uint64, headers [][2]shared.UnsafeEnvoyBuffer, endStream bool) {
+	w := f.writer
+	if w == nil || w.streamEventFn == nil {
+		return
+	}
+	w.streamEventFn(&HTTPStreamHeaders{StreamID: streamID, Headers: headers, EndStream: endStream})
+}
+
+// OnHttpStreamData implements shared.HttpStreamCallback.
+func (f *sahlFilter) OnHttpStreamData(streamID uint64, body []shared.UnsafeEnvoyBuffer, endStream bool) {
+	w := f.writer
+	if w == nil || w.streamEventFn == nil {
+		return
+	}
+	w.streamEventFn(&HTTPStreamData{StreamID: streamID, Body: body, EndStream: endStream})
+}
+
+// OnHttpStreamTrailers implements shared.HttpStreamCallback.
+func (f *sahlFilter) OnHttpStreamTrailers(streamID uint64, trailers [][2]shared.UnsafeEnvoyBuffer) {
+	w := f.writer
+	if w == nil || w.streamEventFn == nil {
+		return
+	}
+	w.streamEventFn(&HTTPStreamTrailers{StreamID: streamID, Trailers: trailers})
+}
+
+// OnHttpStreamComplete implements shared.HttpStreamCallback.
+// Fires the Complete event, then flushes mutations and calls ContinueRequest.
+func (f *sahlFilter) OnHttpStreamComplete(streamID uint64) {
+	w := f.writer
+	if w == nil {
+		return
+	}
+	if w.streamEventFn != nil {
+		w.streamEventFn(&HTTPStreamComplete{StreamID: streamID})
+		w.streamEventFn = nil
+	}
+	w.flush(true)
+}
+
+// OnHttpStreamReset implements shared.HttpStreamCallback.
+// Fires the Reset event. The event fn is responsible for calling w.Send if needed.
+func (f *sahlFilter) OnHttpStreamReset(streamID uint64, reason shared.HttpStreamResetReason) {
+	w := f.writer
+	if w == nil || w.streamEventFn == nil {
+		return
+	}
+	w.streamEventFn(&HTTPStreamReset{StreamID: streamID, Reason: reason})
+	w.streamEventFn = nil
+	// If the event fn did not call w.Send, flush normally so the request can continue
+	// or the filter chain can proceed. If w.Send was called, flush is a no-op.
+	w.flush(!w.responded)
 }
 
 func (f *sahlFilter) OnStreamComplete() {
