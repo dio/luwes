@@ -9,7 +9,6 @@ import (
 
 func init() {
 	sdk.Register("request-logger", requestlogger.NewFactory)
-	sdk.StartPprof("")
 	sdk.RegisterHttpFilterConfigFactories(sdk.Factories())
 }
 
