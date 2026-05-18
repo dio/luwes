@@ -31,6 +31,7 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
                       dynamic_module_config:
                         name: request-ui
+                      filter_name: request-ui
                       filter_config:
                         "@type": type.googleapis.com/google.protobuf.StringValue
                         value: >
@@ -41,11 +42,6 @@ static_resources:
                             "record_response_body":    false,
                             "max_body_bytes":          4096
                           }
-                  # Fault filter: injects a 5s delay on /delayed so the testclient
-                  # can cancel before upstream is reached (simulates DC flag).
-                  - name: envoy.filters.http.fault
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -55,21 +51,6 @@ static_resources:
                     - name: upstream
                       domains: ["*"]
                       routes:
-                        # /delayed: fault filter injects 5s delay before Envoy
-                        # connects to upstream. Cancel within that window and
-                        # upstream is never contacted. Envoy records DC flag.
-                        - match: { prefix: "/delayed" }
-                          route:
-                            cluster: upstream
-                            timeout: 30s
-                          typed_per_filter_config:
-                            envoy.filters.http.fault:
-                              "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
-                              delay:
-                                fixed_delay: 5s
-                                percentage:
-                                  numerator: 100
-                                  denominator: HUNDRED
                         - match: { prefix: "/" }
                           route:
                             cluster: upstream
