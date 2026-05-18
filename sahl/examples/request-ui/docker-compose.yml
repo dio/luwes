@@ -74,22 +74,20 @@ services:
       upstream:
         condition: service_started
 
-  # load-gen: fires a mix of success, slow, error, 404, and POST requests.
-  # Lets you see all request categories populate in the UI without manual curl.
+  # load-gen: fires a mix of success, slow, error, and 404 requests.
+  # Uses sh -c with a quoted single command to avoid YAML folded-scalar quoting issues.
   load-gen:
     image: alpine/curl:latest
-    command: >
-      sh -c "
-      while true; do
-        for path in /ok /ok /ok /slow /error /notfound /api/v1/chat; do
-          curl -s -o /dev/null http://envoy:10000$$path &
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          for path in /ok /ok /ok /slow /error /notfound /ok; do
+            curl -s -o /dev/null "http://envoy:10000$$path"
+          done
+          sleep 1
         done
-        curl -s -o /dev/null -X POST http://envoy:10000/api/v1/completions \
-          -H 'content-type: application/json' \
-          -d '{\"model\":\"gpt-4\",\"messages\":[]}' &
-        sleep 1
-      done
-      "
     depends_on:
       envoy:
         condition: service_started

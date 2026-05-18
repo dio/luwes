@@ -137,13 +137,19 @@ Per-listener JSON config in `envoy.yaml` `filter_config`:
 Body recording buffers the full body before forwarding. Adds latency.
 Enable only when you need prompt/completion-level debugging.
 
-## Quick start
+## Quick start (Docker Compose)
 
-**1. Build the .so for Linux (cross-compile from Mac):**
+**1. Build the .so for Linux amd64 (cross-compile from Mac or run on Linux):**
+
+```sh
+# From the repo root -- builds and copies in one step:
+make request-ui-docker
+```
+
+Or manually:
 
 ```sh
 make build-linux-amd64 EXAMPLE=sahl/request-ui
-# produces dist/librequest-ui.linux-amd64.so
 cp dist/librequest-ui.linux-amd64.so dist/librequest-ui.so
 ```
 
