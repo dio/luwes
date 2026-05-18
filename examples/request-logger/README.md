@@ -34,7 +34,7 @@ At stream completion, all fields are:
 Fields marked "finalized" (`duration_ms`, `response_flags`, `response_code_details`,
 byte sizes) are unavailable from HTTP filter callbacks. They are populated by
 the dynamic module access logger (`on_access_logger_log`), which fires after Envoy
-finalizes `StreamInfo` -- after `OnStreamComplete` returns.
+finalizes `StreamInfo`, after `OnStreamComplete` returns.
 
 ## Config
 
@@ -313,17 +313,53 @@ examples/request-logger/
 gated on config. The hot path (headers only, no bodies, no OTel) is a few header
 reads and metadata writes per request.
 
-**All attributes are available in `OnStreamComplete`, not before.**
-`request.duration`, `response.code`, `response.flags`, `response.code_details`,
-and `upstream.transport_failure_reason` are all empty in earlier callbacks. Envoy
-populates them after the full stream (including response body) resolves. Read them
-in `OnStreamComplete` only.
+**Finalized attributes are not available in HTTP filter callbacks.**
+`request.duration`, `response.flags`, `response.code_details`, byte sizes, and
+`upstream.transport_failure_reason` all return nothing from `OnStreamComplete`.
+Envoy finalizes `StreamInfo` only after the access log phase, which fires after
+the filter chain completes. The access logger (`on_access_logger_log`) is the
+correct place to read them.
 
-**`OnLocalReply` is the only place to capture Envoy-generated error reasons.**
-`response_code_details` (available at stream completion via attribute) tells you
-the same information but as a short token (`response_timeout`). `OnLocalReply`'s
-`details` buffer contains the same token but is available earlier, before the
-response code is final. Both are captured.
+**How the HTTP filter and access logger share state (the pending map).**
+
+The two extension points run on the same Envoy worker thread but there is no
+direct argument passing between them. The bridge is a `sync.Map` on the shared
+`Factory`:
+
+```
+OnRequestHeaders  -> builds rec, stores request fields
+OnResponseHeaders -> stores upstream_status, upstream_address
+OnLocalReply      -> stores error_details (Envoy-generated timeout/circuit-breaker)
+OnStreamComplete  -> copies rec into Factory.pendingRecords[request_id]
+                     tags the active OTel span
+                     does NOT emit the log line yet
+                     |
+                     v (Envoy finalizes StreamInfo)
+                     |
+on_access_logger_log -> pops Factory.pendingRecords[request_id]
+                        fills in duration_ms, byte counts, response_flags,
+                        response_code_details, upstream_failure
+                        emits the final log line
+                     |
+OnDestroy         -> deletes Factory.pendingRecords[request_id] if still present
+                     (safety cleanup when no access logger is wired)
+```
+
+The correlation key is `x-request-id`. Envoy generates and propagates this header
+automatically. `OnRequestHeaders` captures it; the access logger reads it back
+via `h.GetHeader(HttpHeaderTypeRequest, "x-request-id")` to find the matching
+pending record.
+
+Lifecycle safety: `OnDestroy` fires after `on_access_logger_log`. If the access
+logger pops and deletes the entry in `LoadAndDelete`, `OnDestroy` finds nothing
+and is a no-op. If no access logger is wired (or the logger fires for a different
+request type), `OnDestroy` cleans up the entry so the map never leaks.
+
+**`OnLocalReply` fires before `OnResponseHeaders`.** When Envoy generates a
+local reply (upstream timeout, circuit breaker open, rate limit), it calls
+`OnLocalReply` first with the details string, then synthesizes a response and
+calls `OnResponseHeaders`. The `error_details` field is set in `OnLocalReply`
+and carried in the record through `pendingRecords` to the access logger.
 
 **`GetActiveSpan()` is nil when no tracing provider is configured.** All span
 operations guard for nil. Removing the tracing provider from envoy.yaml makes
