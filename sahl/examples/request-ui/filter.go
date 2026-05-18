@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/dio/luwes/sahl"
-	requestuisink "github.com/dio/luwes/sahl/examples/request-ui/sink"
+	"github.com/dio/luwes/sahl/examples/request-ui/sink"
 	"github.com/dio/luwes/shared"
 )
 
@@ -58,7 +58,7 @@ var statePool = sync.Pool{New: func() any { return &reqState{} }}
 
 // Register wires the filter into the sahl registry.
 // Call from init() in cmd/main.go after constructing the sink.
-func Register(name string, s *requestuisink.Sink, pending *PendingRecords) {
+func Register(name string, s *sink.Sink, pending *PendingRecords) {
 	sahl.RegisterWithConfigAndResponse(
 		name,
 		func(h sahl.ConfigHandle) error {
@@ -169,8 +169,8 @@ func Register(name string, s *requestuisink.Sink, pending *PendingRecords) {
 // buildRecord constructs a partial Record from state available at response headers time.
 // Finalized fields (duration, byte counts, flags, code_details) are left zero;
 // the access logger sets them in OnLog after stream finalization.
-func buildRecord(statusCode int, st *reqState) *requestuisink.Record {
-	r := &requestuisink.Record{
+func buildRecord(statusCode int, st *reqState) *sink.Record {
+	r := &sink.Record{
 		RequestID:       st.requestID,
 		Method:          st.method,
 		Path:            st.path,
@@ -197,7 +197,7 @@ func buildRecord(statusCode int, st *reqState) *requestuisink.Record {
 	return r
 }
 
-func hasError(r *requestuisink.Record) bool {
+func hasError(r *sink.Record) bool {
 	return r.ErrorDetails != "" ||
 		r.UpstreamFailure != "" ||
 		(r.ResponseFlags != "" && containsErrorFlag(r.ResponseFlags)) ||
