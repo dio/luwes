@@ -45,20 +45,20 @@ type BytesInfo struct {
 type AccessLogType int32
 
 const (
-	AccessLogTypeNotSet                                    AccessLogType = 0
-	AccessLogTypeTcpUpstreamConnected                     AccessLogType = 1
-	AccessLogTypeTcpPeriodic                              AccessLogType = 2
-	AccessLogTypeTcpConnectionEnd                         AccessLogType = 3
-	AccessLogTypeDownstreamStart                          AccessLogType = 4
-	AccessLogTypeDownstreamPeriodic                       AccessLogType = 5
-	AccessLogTypeDownstreamEnd                            AccessLogType = 6
-	AccessLogTypeUpstreamPoolReady                        AccessLogType = 7
-	AccessLogTypeUpstreamPeriodic                         AccessLogType = 8
-	AccessLogTypeUpstreamEnd                              AccessLogType = 9
-	AccessLogTypeDownstreamTunnelSuccessfullyEstablished  AccessLogType = 10
-	AccessLogTypeUdpTunnelUpstreamConnected               AccessLogType = 11
-	AccessLogTypeUdpPeriodic                              AccessLogType = 12
-	AccessLogTypeUdpSessionEnd                            AccessLogType = 13
+	AccessLogTypeNotSet                                  AccessLogType = 0
+	AccessLogTypeTcpUpstreamConnected                    AccessLogType = 1
+	AccessLogTypeTcpPeriodic                             AccessLogType = 2
+	AccessLogTypeTcpConnectionEnd                        AccessLogType = 3
+	AccessLogTypeDownstreamStart                         AccessLogType = 4
+	AccessLogTypeDownstreamPeriodic                      AccessLogType = 5
+	AccessLogTypeDownstreamEnd                           AccessLogType = 6
+	AccessLogTypeUpstreamPoolReady                       AccessLogType = 7
+	AccessLogTypeUpstreamPeriodic                        AccessLogType = 8
+	AccessLogTypeUpstreamEnd                             AccessLogType = 9
+	AccessLogTypeDownstreamTunnelSuccessfullyEstablished AccessLogType = 10
+	AccessLogTypeUdpTunnelUpstreamConnected              AccessLogType = 11
+	AccessLogTypeUdpPeriodic                             AccessLogType = 12
+	AccessLogTypeUdpSessionEnd                           AccessLogType = 13
 )
 
 // HttpHeaderType identifies which header map to access in AccessLoggerHandle.GetHeader.
@@ -66,10 +66,10 @@ const (
 type HttpHeaderType int32
 
 const (
-	HttpHeaderTypeRequest          HttpHeaderType = 0
-	HttpHeaderTypeRequestTrailer   HttpHeaderType = 1
-	HttpHeaderTypeResponse         HttpHeaderType = 2
-	HttpHeaderTypeResponseTrailer  HttpHeaderType = 3
+	HttpHeaderTypeRequest         HttpHeaderType = 0
+	HttpHeaderTypeRequestTrailer  HttpHeaderType = 1
+	HttpHeaderTypeResponse        HttpHeaderType = 2
+	HttpHeaderTypeResponseTrailer HttpHeaderType = 3
 )
 
 // AccessLoggerHandle provides access to finalized stream state during OnLog.
@@ -162,4 +162,4 @@ type AccessLoggerConfigFactory interface {
 type EmptyAccessLogger struct{}
 
 func (e *EmptyAccessLogger) OnLog(_ AccessLoggerHandle, _ AccessLogType) {}
-func (e *EmptyAccessLogger) OnDestroy()                                   {}
+func (e *EmptyAccessLogger) OnDestroy()                                  {}

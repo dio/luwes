@@ -192,7 +192,7 @@ func (h *dymAccessLoggerHandle) Log(level shared.LogLevel, format string, args .
 }
 
 // =============================================================================
-// ABI export functions -- called by Envoy
+// ABI export functions: called by Envoy
 // =============================================================================
 
 //export envoy_dynamic_module_on_access_logger_config_new
