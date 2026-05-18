@@ -161,10 +161,24 @@ func (f *Factory) OnDestroy() {}
 // If body recording is enabled it signals Envoy to buffer the request body.
 func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
 	r := &f.rec
-	r.requestID = headers.GetOne("x-request-id").ToString()
-	r.method = headers.GetOne(":method").ToString()
-	r.path = headers.GetOne(":path").ToString()
-	r.host = headers.GetOne(":authority").ToString()
+	var (
+		reqIDBuf  shared.UnsafeEnvoyBuffer
+		methodBuf shared.UnsafeEnvoyBuffer
+		pathBuf   shared.UnsafeEnvoyBuffer
+		hostBuf   shared.UnsafeEnvoyBuffer
+	)
+	if headers.GetOneInto("x-request-id", &reqIDBuf) {
+		r.requestID = reqIDBuf.ToString()
+	}
+	if headers.GetOneInto(":method", &methodBuf) {
+		r.method = methodBuf.ToString()
+	}
+	if headers.GetOneInto(":path", &pathBuf) {
+		r.path = pathBuf.ToString()
+	}
+	if headers.GetOneInto(":authority", &hostBuf) {
+		r.host = hostBuf.ToString()
+	}
 
 	if span := f.handle.GetActiveSpan(); span != nil {
 		if id, ok := span.GetTraceID(); ok {
@@ -201,7 +215,10 @@ func (f *Filter) OnRequestBody(body shared.BodyBuffer, endStream bool) shared.Bo
 // If response body recording is enabled it signals Envoy to buffer the body.
 func (f *Filter) OnResponseHeaders(headers shared.HeaderMap, _ bool) shared.HeadersStatus {
 	r := &f.rec
-	r.upstreamStatus = headers.GetOne(":status").ToString()
+	var statusBuf shared.UnsafeEnvoyBuffer
+	if headers.GetOneInto(":status", &statusBuf) {
+		r.upstreamStatus = statusBuf.ToString()
+	}
 
 	if addr, ok := f.handle.GetAttributeString(shared.AttributeIDUpstreamAddress); ok {
 		r.upstreamAddress = addr.ToString()
