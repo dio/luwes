@@ -308,10 +308,10 @@ func (s *Sink) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			b, _ := json.Marshal(rec)
-			fmt.Fprintf(w, "data: %s\n\n", b)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
 			flusher.Flush()
 		case <-keepalive.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
