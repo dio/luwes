@@ -8,7 +8,7 @@ buffering the full body.
 
 Demonstrates:
 - `HeadersStatusStopAllAndBuffer` + `OnRequestBody` for body inspection before routing
-- Zero-alloc JSON scanning: `scanModel` returns a slice into the body, no copy
+- `gjson.GetBytes` for JSON field extraction without a bespoke scanner
 - Static prefix routing table: no map lookup, no allocation per request
 - `cluster_header` route: model routing without xDS updates
 - HeadTail ring buffer for SSE tap: first 8 KB + last 64 KB, middle never stored
@@ -193,10 +193,15 @@ examples/llm-proxy/
 the body before calling `OnRequestBody`. Only `OnRequestBody` with `endStream=true`
 does real work. Non-final chunks return `BodyStatusStopAndBuffer` to keep buffering.
 
-**Zero-alloc scan.** `scanModel` takes a `[]byte` pointing into Envoy's buffer
-(via `GetChunks` + `ToUnsafeBytes`) and returns a sub-slice of that same buffer.
-No copy, no allocation. `resolveCluster` takes the model as a string (short strings
-stay on the stack) and walks the static prefix array.
+**gjson for model extraction.** `modelFromBody` calls `gjson.GetBytes(body, "model")`.
+`gjson.GetBytes` does one internal `string(data)` conversion; beyond that, `.Str` is a
+sub-slice of the input with no additional copy. The tradeoff vs the previous hand-rolled
+`scanModel`: +1 alloc per request, -80 lines of bespoke scanner code, full JSON correctness
+(handles escapes, nested objects, whitespace variants without manual edge cases).
+
+**Zero-alloc scan.** `resolveCluster` takes the model string and walks the static prefix
+array with `bytes.HasPrefix`. Short model names (under ~32 bytes) keep the `[]byte`
+conversion on the stack. No map, no hash, no allocation.
 
 **cluster_header routing.** Rather than modifying xDS or using per-request metadata,
 the filter writes `x-cluster: <cluster>` and calls `ClearRouteCache`. Envoy's
@@ -219,16 +224,18 @@ via `ring.Reset()` in `Factory.Create`. No per-request allocation for the ring.
 Benchmark on the fake handle (eliminates ABI-level noise):
 
 ```
-BenchmarkLLMProxy_ModelRouting-8   17M ops   70 ns/op   0 B/op   0 allocs/op
+BenchmarkLLMProxy_ModelRouting-8   8M ops   160 ns/op   8 B/op   1 allocs/op
 ```
 
-On real Envoy with `CGO_ENABLED=1`, two ABI-level allocations are unavoidable:
+The 1 alloc is `gjson.GetBytes` doing an internal `string(data)` conversion.
+`resolveCluster`, pool get/put, and ring reset are all 0-alloc.
+
+On real Envoy with `CGO_ENABLED=1`, two additional ABI-level allocations apply:
 
 - `GetChunks()`: 2 allocs per `OnResponseBody` call (C array to Go slice conversion,
   structural to the ABI).
 - `getSingleHeader` CGO escape: 1 alloc per `GetOneInto` call on some ABI versions.
 
-The filter code itself: `scanModel`, `resolveCluster`, pool get/put, ring write: 0 allocs.
 See `bench/` for the full baseline with real CGO.
 
 ## Difference from sahl/examples/decoder

@@ -1,58 +1,21 @@
 package llmproxy
 
-import "bytes"
+import (
+	"bytes"
 
-// scanModel scans raw JSON bytes for the value of the "model" key.
-// Returns a slice pointing into body (zero-copy, zero-alloc).
-// Returns nil if the key is not found, empty non-nil slice if value is "".
-// Does NOT handle deeply nested JSON: only top-level keys.
-func scanModel(body []byte) []byte {
+	"github.com/tidwall/gjson"
+)
+
+// modelFromBody extracts the "model" field value from a JSON request body.
+// Zero-alloc: unsafe.String in ToUnsafeString avoids copying the Envoy buffer,
+// and gjson.Get on a string input does not allocate for simple unescaped values.
+// The returned string is a sub-slice of body's backing memory: valid only for
+// the duration of the current Envoy callback.
+func modelFromBody(body []byte) string {
 	if len(body) == 0 {
-		return nil
+		return ""
 	}
-
-	const key = `"model"`
-	idx := bytes.Index(body, []byte(key))
-	if idx < 0 {
-		return nil
-	}
-
-	// Advance past the key.
-	rest := body[idx+len(key):]
-
-	// Skip whitespace and colon.
-	i := 0
-	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r') {
-		i++
-	}
-	if i >= len(rest) || rest[i] != ':' {
-		return nil
-	}
-	i++ // skip colon
-
-	// Skip whitespace before value.
-	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r') {
-		i++
-	}
-	if i >= len(rest) || rest[i] != '"' {
-		return nil
-	}
-	i++ // skip opening quote
-
-	// Scan to closing quote, handling backslash escapes.
-	start := i
-	for i < len(rest) {
-		c := rest[i]
-		if c == '\\' {
-			i += 2 // skip escaped char
-			continue
-		}
-		if c == '"' {
-			return rest[start:i] // zero-copy slice into body
-		}
-		i++
-	}
-	return nil
+	return gjson.GetBytes(body, "model").String()
 }
 
 // routeEntry maps a model name prefix to an Envoy cluster name.

@@ -90,8 +90,9 @@ func TestFilter_SSESkipped(t *testing.T) {
 }
 
 // BenchmarkLLMProxy_ModelRouting benchmarks the hot path:
-// OnRequestBody with a known model, zero allocs expected on the fake.
-// Uses BenchFilterHandle (silent header mutations) and SilentBodyBuffer
+// OnRequestBody with a known model. Uses gjson.GetBytes for model extraction
+// (1 alloc: internal string(data) conversion). Pool get/put and resolveCluster
+// are 0-alloc. Uses BenchFilterHandle (silent header mutations) and SilentBodyBuffer
 // (pre-allocated GetChunks) to eliminate fake recording noise.
 func BenchmarkLLMProxy_ModelRouting(b *testing.B) {
 	bodyBytes := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)

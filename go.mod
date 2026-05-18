@@ -2,7 +2,15 @@ module github.com/dio/luwes
 
 go 1.26
 
-require go.uber.org/mock v0.6.0
+require (
+	github.com/tidwall/gjson v1.19.0
+	go.uber.org/mock v0.6.0
+)
+
+require (
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

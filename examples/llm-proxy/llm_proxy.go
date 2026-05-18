@@ -130,8 +130,8 @@ func (f *Filter) OnRequestBody(body shared.BodyBuffer, endStream bool) shared.Bo
 		bodyBuf = chunks[0]
 	}
 
-	model := scanModel(bodyBuf.ToUnsafeBytes())
-	cluster := resolveCluster(string(model)) // short string: likely stack-allocated
+	model := modelFromBody(bodyBuf.ToUnsafeBytes())
+	cluster := resolveCluster(model)
 
 	f.cluster = cluster
 	f.handle.RequestHeaders().Set("x-cluster", cluster)
