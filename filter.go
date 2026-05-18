@@ -214,3 +214,54 @@ func StartPprof(addr string) {
 		fmt.Fprintf(os.Stderr, "[luwes] pprof on http://%s/debug/pprof/\n", ln.Addr())
 	})
 }
+
+// AccessLoggerFactoryFunc is the factory constructor for access loggers.
+// Called once per access logger config load on the main thread.
+type AccessLoggerFactoryFunc func(
+	shared.AccessLoggerConfigHandle, []byte,
+) (shared.AccessLoggerFactory, error)
+
+var (
+	accessLoggerRegistry   = make(map[string]shared.AccessLoggerConfigFactory)
+	accessLoggerRegistryMu sync.Mutex
+)
+
+// RegisterAccessLogger registers an access logger by name using a factory func.
+// Call from your access logger package's init().
+//
+//	func init() {
+//	    luwes.RegisterAccessLogger("my-logger", mylogger.NewFactory)
+//	}
+//
+// Then wire from cmd/main.go:
+//
+//	sdk.RegisterAccessLoggerConfigFactories(luwes.AccessLoggerFactories())
+func RegisterAccessLogger(name string, fn AccessLoggerFactoryFunc) {
+	accessLoggerRegistryMu.Lock()
+	defer accessLoggerRegistryMu.Unlock()
+	if _, ok := accessLoggerRegistry[name]; ok {
+		panic("access logger already registered: " + name)
+	}
+	accessLoggerRegistry[name] = &accessLoggerFactoryFuncAdapter{fn: fn}
+}
+
+// AccessLoggerFactories returns all registered access logger config factories.
+func AccessLoggerFactories() map[string]shared.AccessLoggerConfigFactory {
+	accessLoggerRegistryMu.Lock()
+	defer accessLoggerRegistryMu.Unlock()
+	out := make(map[string]shared.AccessLoggerConfigFactory, len(accessLoggerRegistry))
+	for k, v := range accessLoggerRegistry {
+		out[k] = v
+	}
+	return out
+}
+
+type accessLoggerFactoryFuncAdapter struct {
+	fn AccessLoggerFactoryFunc
+}
+
+func (a *accessLoggerFactoryFuncAdapter) Create(
+	h shared.AccessLoggerConfigHandle, raw []byte,
+) (shared.AccessLoggerFactory, error) {
+	return a.fn(h, raw)
+}
