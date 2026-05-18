@@ -23,6 +23,13 @@ type ResponseChunk struct {
 	// pre-extracted for convenience. Empty string if absent.
 	ContentType string
 
+	// ResponseFlags is the value of the x-envoy-response-flags response header.
+	// Non-empty only when Envoy synthesized the response due to an infrastructure
+	// failure (e.g. "UF" for upstream connection failure, "UT" for timeout).
+	// Empty for clean upstream application responses.
+	// See: https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage
+	ResponseFlags string
+
 	// Data is the current body chunk. Nil during the OnResponseHeaders call.
 	// Points into Envoy-owned memory; valid only during this call.
 	Data []byte
@@ -75,6 +82,11 @@ func (f *sahlFilter) onResponseHeaders(headers shared.HeaderMap) {
 	if headers.GetOneInto("content-type", &ctBuf) && ctBuf.Len > 0 {
 		// Content-Type is pre-copied: handler may inspect it after this call returns.
 		f.respState.chunk.ContentType = ctBuf.ToString()
+	}
+
+	var flagsBuf shared.UnsafeEnvoyBuffer
+	if headers.GetOneInto("x-envoy-response-flags", &flagsBuf) && flagsBuf.Len > 0 {
+		f.respState.chunk.ResponseFlags = flagsBuf.ToString()
 	}
 
 	f.respState.chunk.Data = nil

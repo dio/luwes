@@ -191,6 +191,14 @@ func (f *sahlFilter) OnResponseBody(body shared.BodyBuffer, endStream bool) shar
 	if f.handler.responseFn != nil {
 		f.onResponseBody(body, endStream)
 	}
+	if f.handler.mutableResponse {
+		// Mutation mode: buffer all chunks until endStream, then let the
+		// handler's SetResponseBody/AppendResponseBody calls apply to the
+		// fully-buffered body before Envoy delivers it downstream.
+		if !endStream {
+			return shared.BodyStatusStopAndBuffer
+		}
+	}
 	return shared.BodyStatusContinue
 }
 

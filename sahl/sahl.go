@@ -106,6 +106,10 @@ type filterDef struct {
 	// instead of OnRequestHeaders. The body is available via r.Body().
 	// OnRequestHeaders returns Continue immediately (no early mutations).
 	bodyAware bool
+	// mutableResponse: if true, OnResponseBody returns BodyStatusStopAndBuffer
+	// on non-final chunks, buffering the full response before delivering it.
+	// Enables w.SetResponseBody and w.AppendResponseBody in the response handler.
+	mutableResponse bool
 }
 
 // Register registers a synchronous filter handler by name.
@@ -159,6 +163,18 @@ func RegisterWithBodyConfigAndResponse(name string, configFn ConfigFunc, h Handl
 // RegisterWithBodyAndResponse is like RegisterWithBody with a response observer.
 func RegisterWithBodyAndResponse(name string, h HandlerFunc, resp ResponseHandlerFunc) {
 	mustAdd(name, &filterDef{handler: h, responseFn: resp, bodyAware: true})
+}
+
+// RegisterWithMutableResponse registers a filter that can mutate the response body.
+// Unlike RegisterWithResponse (observe-only), this variant returns
+// BodyStatusStopAndBuffer on response body chunks, causing Envoy to buffer the
+// full response before delivering it downstream. The response handler may then
+// call w.SetResponseBody or w.AppendResponseBody on the EndStream=true call.
+//
+// Trade-off: buffering blocks downstream streaming until the complete response
+// is received. Do not use for SSE or large streaming responses.
+func RegisterWithMutableResponse(name string, h HandlerFunc, resp ResponseHandlerFunc) {
+	mustAdd(name, &filterDef{handler: h, responseFn: resp, mutableResponse: true})
 }
 
 // RegisterFactory registers a filter using a factory function that returns a

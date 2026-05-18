@@ -249,6 +249,31 @@ func (w *Writer) flushResponseMutations() {
 	w.counterMuts = w.counterMuts[:0]
 }
 
+// SetResponseBody replaces the entire buffered response body with newBody.
+// Only valid inside a ResponseHandlerFunc when the filter is registered with
+// mutable-response mode (RegisterWithMutableResponse). Has no effect otherwise.
+// Must be called on the EndStream=true call; calling earlier is a no-op because
+// Envoy has not buffered the complete body yet.
+func (w *Writer) SetResponseBody(newBody []byte) {
+	body := w.handle.BufferedResponseBody()
+	if body == nil {
+		return
+	}
+	body.Drain(body.GetSize())
+	body.Append(newBody)
+}
+
+// AppendResponseBody appends data to the end of the buffered response body.
+// Only valid inside a ResponseHandlerFunc when the filter is in mutable-response
+// mode. Like SetResponseBody, best called on EndStream=true.
+func (w *Writer) AppendResponseBody(data []byte) {
+	body := w.handle.BufferedResponseBody()
+	if body == nil {
+		return
+	}
+	body.Append(data)
+}
+
 // flush applies all queued mutations.
 // Scheduler.Schedule: in that case Envoy is paused (HeadersStatusStop was
 // returned) and ContinueRequest must be called to resume processing.

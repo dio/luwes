@@ -36,3 +36,11 @@ func NewFilterForTesting(
 		handle:  handle,
 	}
 }
+
+// SetMutableResponse switches the filter into mutable-response mode.
+// OnResponseBody returns BodyStatusStopAndBuffer on non-final chunks,
+// buffering the full response before the handler can mutate it.
+// Only valid on filters created via NewFilterForTesting.
+func (f *SahlFilterForTesting) SetMutableResponse(v bool) {
+	f.handler.mutableResponse = v
+}
