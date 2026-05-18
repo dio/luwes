@@ -46,7 +46,7 @@ See `envoy.yaml` for a complete example pointing at real providers.
 
 ```sh
 make build EXAMPLE=sahl/decoder
-# or directly:
+# or manually (from repo root):
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
   -o dist/libdecoder.so ./sahl/examples/decoder/cmd
 ```
@@ -55,9 +55,20 @@ CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
 
 ```sh
 make run EXAMPLE=sahl/decoder
+# or manually:
+GODEBUG=cgocheck=0 \
+ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
+.bin/envoy -c sahl/examples/decoder/envoy.yaml --log-level warning
 ```
 
 ## Test
+
+```sh
+# Run unit tests (no Envoy required)
+make examples/test/sahl/examples/decoder
+```
+
+With Envoy running (`make run EXAMPLE=sahl/decoder`), in a separate terminal:
 
 ```sh
 # Route to OpenAI

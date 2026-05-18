@@ -9,5 +9,5 @@ import (
 )
 
 func main() {
-	sdk.RegisterRaw("header-auth-sahl", sahl.Factory(headerauthsahl.Handler))
+	sdk.RegisterRaw("header-auth", sahl.Factory(headerauthsahl.Handler))
 }

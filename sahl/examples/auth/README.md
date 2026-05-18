@@ -55,25 +55,42 @@ the request.
 
 Build the .so and run Envoy with the two-listener config:
 
-```
-go build -buildmode=c-shared -o auth.so ./cmd
-envoy -c envoy.yaml
+```sh
+make build EXAMPLE=sahl/auth
+make run EXAMPLE=sahl/auth
 ```
 
-Test per-listener isolation:
+Or manually (from repo root):
 
+```sh
+CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
+  -o dist/libauth.so ./sahl/examples/auth/cmd
+
+GODEBUG=cgocheck=0 \
+ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
+.bin/envoy -c sahl/examples/auth/envoy.yaml --log-level warning
 ```
-# Admin listener -- key-admin allowed, key-user rejected
-curl -H 'x-api-key: key-admin' localhost:10000/    # 200 admin ok
-curl -H 'x-api-key: key-user'  localhost:10000/    # 401 invalid key
 
-# User listener -- key-user allowed, key-admin rejected
-curl -H 'x-api-key: key-user'  localhost:10001/    # 200 user ok
-curl -H 'x-api-key: key-admin' localhost:10001/    # 401 invalid key
+Test per-listener isolation (in a separate terminal):
+
+```sh
+# Admin listener: key-admin allowed, key-user rejected
+curl -si -H 'x-api-key: key-admin' localhost:10000/    # 200
+curl -si -H 'x-api-key: key-user'  localhost:10000/    # 401 invalid key
+
+# User listener: key-user allowed, key-admin rejected
+curl -si -H 'x-api-key: key-user'  localhost:10001/    # 200
+curl -si -H 'x-api-key: key-admin' localhost:10001/    # 401 invalid key
 
 # Both listeners reject missing key
-curl localhost:10000/                               # 401 missing key
-curl localhost:10001/                               # 401 missing key
+curl -si localhost:10000/                               # 401 missing key
+curl -si localhost:10001/                               # 401 missing key
+```
+
+## Run unit tests
+
+```sh
+make examples/test/sahl/examples/auth
 ```
 
 ## Code structure

@@ -51,8 +51,8 @@ output_tokens=%DYNAMIC_METADATA(sse_tap:output_tokens)%
 ## Build
 
 ```sh
-make build EXAMPLE=sse-tap
-# or directly:
+make build EXAMPLE=sahl/sse-tap
+# or manually (from repo root):
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
   -o dist/libsse-tap.so ./sahl/examples/sse-tap/cmd
 ```
@@ -60,7 +60,7 @@ CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
 ## Run
 
 ```sh
-make run EXAMPLE=sse-tap
+make run EXAMPLE=sahl/sse-tap
 ```
 
 Or manually:
@@ -160,6 +160,12 @@ artifact as sahl request benchmarks).
 - `w.IncrementCounter` + `w.SetMetadata` from a response observer
 - `BodyStatusContinue` (observe mode): chunks forwarded to client, zero latency added
 - `ExtractUsage` exported for unit testing without Envoy
+
+## Run unit tests
+
+```sh
+make examples/test/sahl/examples/sse-tap
+```
 
 ## Filter structure
 

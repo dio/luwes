@@ -7,8 +7,12 @@ ENVOY_VERSION := 1.38.0
 ENVOY_BIN     := $(CURDIR)/.bin/envoy
 
 EXAMPLE     ?= header-auth
-EXAMPLE_CMD := ./examples/$(EXAMPLE)/cmd
-ENVOY_YAML  ?= $(CURDIR)/examples/$(EXAMPLE)/envoy.yaml
+# sahl/* routes to sahl/examples/<name>/; everything else to examples/<name>/
+EXAMPLE_CMD ?= $(if $(filter sahl/%,$(EXAMPLE)),./sahl/examples/$(EXAMPLE:sahl/%=%)/cmd,./examples/$(EXAMPLE)/cmd)
+ENVOY_YAML  ?= $(if $(filter sahl/%,$(EXAMPLE)),$(CURDIR)/sahl/examples/$(EXAMPLE:sahl/%=%)/envoy.yaml,$(CURDIR)/examples/$(EXAMPLE)/envoy.yaml)
+# .so name strips the sahl/ prefix: sahl/decoder -> decoder, header-auth -> header-auth
+# Override with EXAMPLE_SO=name if the module registers under a different name.
+EXAMPLE_SO  ?= $(EXAMPLE:sahl/%=%)
 
 GOOS  := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
@@ -50,7 +54,7 @@ download-envoy: $(ENVOY_BIN)
 build:
 	@mkdir -p dist
 	CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-		-o dist/lib$(EXAMPLE).so $(EXAMPLE_CMD)
+		-o dist/lib$(EXAMPLE_SO).so $(EXAMPLE_CMD)
 
 # Cross-compile for Linux amd64
 .PHONY: build-linux-amd64
@@ -60,7 +64,7 @@ build-linux-amd64: $(ZIG_BIN)
 	CC=$(CURDIR)/scripts/zigcc.sh \
 	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
 	go build -trimpath -buildmode=c-shared \
-		-o dist/lib$(EXAMPLE).linux-amd64.so $(EXAMPLE_CMD)
+		-o dist/lib$(EXAMPLE_SO).linux-amd64.so $(EXAMPLE_CMD)
 
 # Cross-compile for Linux arm64
 .PHONY: build-linux-arm64
@@ -70,7 +74,7 @@ build-linux-arm64: $(ZIG_BIN)
 	CC=$(CURDIR)/scripts/zigcc.sh \
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
 	go build -trimpath -buildmode=c-shared \
-		-o dist/lib$(EXAMPLE).linux-arm64.so $(EXAMPLE_CMD)
+		-o dist/lib$(EXAMPLE_SO).linux-arm64.so $(EXAMPLE_CMD)
 
 .PHONY: build-linux
 build-linux: build-linux-amd64 build-linux-arm64
@@ -119,18 +123,18 @@ flamegraph: build $(ENVOY_BIN)
 	@echo "Capturing allocs profile under load..."
 	@hey -n 500000 -c 200 -H "x-api-key: bench" http://localhost:10000/ > /dev/null &
 	@sleep 2
-	@curl -sf http://127.0.0.1:6061/debug/pprof/allocs -o bench/profiles/allocs_$(EXAMPLE).out
+	@curl -sf http://127.0.0.1:6061/debug/pprof/allocs -o bench/profiles/allocs_$(EXAMPLE_SO).out
 	@pkill -f "envoy.*$(notdir $(ENVOY_YAML))" 2>/dev/null || true
 	@echo ""
-	@echo "Profile saved: bench/profiles/allocs_$(EXAMPLE).out"
+	@echo "Profile saved: bench/profiles/allocs_$(EXAMPLE_SO).out"
 	@echo "Top allocations:"
-	@go tool pprof -alloc_objects -top bench/profiles/allocs_$(EXAMPLE).out 2>/dev/null | head -15
+	@go tool pprof -alloc_objects -top bench/profiles/allocs_$(EXAMPLE_SO).out 2>/dev/null | head -15
 	@echo ""
 	@echo "Generating flamegraph..."
 	@PATH="$(CURDIR)/scripts/flamegraph:$$PATH" \
-		go-torch -b bench/profiles/allocs_$(EXAMPLE).out --pprofArgs="-alloc_objects" \
-		-f bench/profiles/flamegraph_$(EXAMPLE).svg 2>/dev/null && \
-		echo "  Flamegraph: bench/profiles/flamegraph_$(EXAMPLE).svg" || \
+		go-torch -b bench/profiles/allocs_$(EXAMPLE_SO).out --pprofArgs="-alloc_objects" \
+		-f bench/profiles/flamegraph_$(EXAMPLE_SO).svg 2>/dev/null && \
+		echo "  Flamegraph: bench/profiles/flamegraph_$(EXAMPLE_SO).svg" || \
 		echo "  (install go-torch for flamegraph: go install github.com/uber-archive/go-torch@latest)"
 
 # Start otel-front (local OTLP receiver + browser UI)

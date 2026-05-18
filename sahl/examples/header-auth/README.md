@@ -1,4 +1,4 @@
-# header-auth-sahl
+# header-auth (sahl)
 
 The sahl port of `examples/header-auth`. Same API key authentication logic,
 implemented with [sahl.Register] instead of the raw luwes SDK.
@@ -62,21 +62,25 @@ pre-copy convenience.
 ## Build
 
 ```sh
-make build EXAMPLE=header-auth-sahl
-# or directly:
+make build EXAMPLE=sahl/header-auth
+# or manually (from repo root):
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-  -o dist/libheader-auth-sahl.so ./sahl/examples/header-auth/cmd
+  -o dist/libheader-auth.so ./sahl/examples/header-auth/cmd
 ```
 
 ## Run
 
 ```sh
-make run EXAMPLE=header-auth-sahl
+make run EXAMPLE=sahl/header-auth
 ```
 
 ## Test
 
 ```sh
+# Run unit tests (no Envoy required)
+make examples/test/sahl/examples/header-auth
+
+# With Envoy running, in a separate terminal:
 # Request without key (expect 401)
 curl -si http://localhost:10000/
 
