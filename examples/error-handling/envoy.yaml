@@ -1,0 +1,75 @@
+static_resources:
+  listeners:
+    - name: error-handling
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10000 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: error_handling
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format_source:
+                          inline_string: |
+                            [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
+                            status=%RESPONSE_CODE% flags=%RESPONSE_FLAGS%
+                            user=%REQ(X-AUTH-USER)% details=%RESPONSE_CODE_DETAILS%
+                http_filters:
+                  - name: error-handling
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: error-handling
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: error_handling
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: upstream
+                            timeout: 2s
+
+  clusters:
+    # auth: the callout target. Point this at a real auth service or the mock
+    # server documented in the README. Responds to:
+    #   GET /ok       -> 200, x-auth-user: alice
+    #   GET /deny     -> 401
+    #   GET /error    -> 500
+    #   GET /timeout  -> (slow, triggers Envoy upstream timeout)
+    - name: auth
+      connect_timeout: 1s
+      type: STATIC
+      load_assignment:
+        cluster_name: auth
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 11000 }
+
+    # upstream: the backend the request is forwarded to after auth passes.
+    # Points at the same mock server on a different port.
+    - name: upstream
+      connect_timeout: 1s
+      type: STATIC
+      load_assignment:
+        cluster_name: upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 11001 }
+
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
