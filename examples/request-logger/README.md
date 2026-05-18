@@ -23,9 +23,9 @@ Every request accumulates a [record] across four callbacks:
 
 At stream completion, all fields are:
 
-1. Written to dynamic metadata namespace `req_log` -- access log formatters
-   read them via `%DYNAMIC_METADATA(req_log:field)%`.
-2. Set as span tags on the active OTel span -- fields appear as span attributes
+1. Written to dynamic metadata namespace `req_log` so access log formatters
+   can read them via `%DYNAMIC_METADATA(req_log:field)%`.
+2. Set as span tags on the active OTel span so fields appear as span attributes
    in Jaeger/Tempo/Grafana Tempo.
 3. Emitted as a single structured log line to Envoy's error log.
 
@@ -84,8 +84,8 @@ OTel access log exporter stamps on every log record. The result: every row in yo
 log store has a `trace_id` you can paste directly into Jaeger or Tempo.
 
 At stream completion, all recorded fields are set as span tags. This means the
-trace itself carries the full error context -- no need to correlate from the log
-side when investigating a specific trace.
+trace itself carries the full error context so you can jump from a metric alert
+directly to the trace without a separate log query.
 
 ## Prerequisites
 
@@ -111,27 +111,13 @@ CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
   -o dist/librequest-logger.so ./examples/request-logger/cmd
 ```
 
-**2. Start a backend server**
+**2. Start the test backend**
+
+A Go backend server is included. It serves `/ok`, `/slow`, `/error`,
+`/notfound`, and LLM-style POST endpoints on `127.0.0.1:11000`:
 
 ```sh
-python3 -c "
-import http.server
-
-class H(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'ok\n')
-    def do_POST(self):
-        n = int(self.headers.get('content-length', 0))
-        body = self.rfile.read(n)
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'{\"ok\":true}\n')
-    def log_message(self, *a): pass
-
-http.server.HTTPServer(('127.0.0.1', 11000), H).serve_forever()
-" &
+go run ./examples/request-logger/testserver
 ```
 
 **3. Start Envoy**
@@ -144,23 +130,69 @@ ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
 .bin/envoy -c examples/request-logger/envoy.yaml --log-level warning
 ```
 
-**4. Send requests**
+**4. Run the test client**
 
 ```sh
-# Normal request -- check stdout access log for JSON record.
+go run ./examples/request-logger/testclient
+```
+
+Expected output:
+
+```
+METHOD PATH                           STATUS      DUR
+-------------------------------------------------------
+GET    /ok                               200      2ms
+GET    /health                           200      1ms
+GET    /error                            500      3ms
+GET    /notfound                         404      1ms
+GET    /slow                             200   1502ms
+POST   /v1/chat/completions              200      4ms
+POST   /v1/messages                      200      3ms
+GET    /ok                               200      1ms
+GET    /ok                               200      1ms
+-------------------------------------------------------
+done: check Envoy stdout for JSON access log records
+```
+
+Each request produces a JSON access log record on Envoy's stdout:
+
+```json
+{
+  "request_id": "a1b2c3d4-...",
+  "method": "GET",
+  "path": "/slow",
+  "status": 200,
+  "flags": "-",
+  "duration_ms": 1502,
+  "upstream": "127.0.0.1:11000",
+  "details": "via_upstream",
+  "trace_id": "",
+  "error_details": ""
+}
+```
+
+**5. Send individual requests**
+
+```sh
+# Normal
+curl -si http://localhost:10000/ok
+
+# Upstream 500 (exercises error logging)
+curl -si http://localhost:10000/error
+
+# Slow (exercises duration field)
+curl -si http://localhost:10000/slow
+
+# LLM-style POST
 curl -si http://localhost:10000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
 
-# Check the structured JSON access log line in Envoy's stdout:
-# {"request_id":"...", "method":"POST", "path":"/v1/chat/completions",
-#  "status":200, "duration_ms":3, "trace_id":"...", ...}
-
-# Check Envoy admin for filter stats:
+# Check Envoy admin stats:
 curl -s http://127.0.0.1:9901/stats | grep request_logger
 ```
 
-**5. Enable body recording**
+**6. Enable body recording**
 
 Edit `envoy.yaml`, set `record_request_body: true` in filter_config, restart Envoy.
 Then POST a request and check the `request_body` field in the access log.
@@ -185,17 +217,19 @@ Uncomment the OTel tracing provider and OTel access log exporter blocks in
 
 ## Analysis with DuckDB
 
-The access log JSON format writes one record per line. Pipe it into a file and
-query it with DuckDB for offline analysis.
+The access log JSON format writes one record per line. Redirect Envoy's stdout
+to a file and query it with DuckDB for offline analysis.
 
 **Collect logs:**
 
 ```sh
-# Redirect Envoy stdout to a file while keeping warning logs on stderr:
 GODEBUG=cgocheck=0 \
 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
 .bin/envoy -c examples/request-logger/envoy.yaml --log-level warning \
   > /tmp/access.ndjson 2>/dev/null &
+
+# Run the test client to generate some traffic:
+go run ./examples/request-logger/testclient
 ```
 
 **Query with DuckDB:**
@@ -248,6 +282,8 @@ examples/request-logger/
   request_logger_test.go 11 tests: config, happy path, errors, body, headers, pool
   cmd/main.go            wiring: Register + RegisterHttpFilterConfigFactories
   envoy.yaml             OTel tracing + JSON access log + OTel access log (commented)
+  testserver/main.go     Go backend server (go run ./testserver)
+  testclient/main.go     Go test client (go run ./testclient)
 ```
 
 ## Key patterns
