@@ -63,7 +63,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	gopp "net/http/pprof"
+	"net/http/pprof"
 	"os"
 	"runtime/debug"
 	"sync"
@@ -180,13 +180,13 @@ func StartPprof(addr string) {
 		mux := http.NewServeMux()
 
 		// pprof: explicit handlers, no DefaultServeMux coupling.
-		mux.HandleFunc("GET /debug/pprof/", gopp.Index)
-		mux.HandleFunc("GET /debug/pprof/cmdline", gopp.Cmdline)
-		mux.HandleFunc("GET /debug/pprof/profile", gopp.Profile)
-		mux.HandleFunc("GET /debug/pprof/symbol", gopp.Symbol)
-		mux.HandleFunc("GET /debug/pprof/trace", gopp.Trace)
+		mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+		mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 		for _, name := range []string{"goroutine", "heap", "allocs", "block", "mutex", "threadcreate"} {
-			mux.Handle("GET /debug/pprof/"+name, gopp.Handler(name))
+			mux.Handle("GET /debug/pprof/"+name, pprof.Handler(name))
 		}
 
 		health := func(w http.ResponseWriter, _ *http.Request) {
