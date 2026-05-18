@@ -9,6 +9,8 @@
 package requestui
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 
 	requestuisink "github.com/dio/luwes/sahl/examples/request-ui/sink"
@@ -88,7 +90,13 @@ func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogTy
 
 	r, ok := l.pending.LoadAndDelete(key)
 	if !ok {
-		return
+		// DC case: client disconnected before response headers arrived.
+		// The response handler never fired so no record was deposited.
+		// Build a minimal record from attributes available in the access logger.
+		r = l.buildMinimalRecord(h, key)
+		if r == nil {
+			return
+		}
 	}
 
 	// Enrich with finalized stream fields.
@@ -106,8 +114,8 @@ func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogTy
 	if v, ok := h.GetAttributeString(shared.AttributeIDResponseCodeDetails); ok && v.Len > 0 {
 		r.ResponseCodeDetails = v.ToString()
 	}
-	if v, ok := h.GetAttributeString(shared.AttributeIDResponseFlags); ok && v.Len > 0 {
-		r.ResponseFlags = v.ToString()
+	if flags := responseFlags(h.GetResponseFlags()); flags != "" {
+		r.ResponseFlags = flags
 	}
 	if v, ok := h.GetAttributeString(shared.AttributeIDUpstreamTransportFailureReason); ok && v.Len > 0 {
 		r.UpstreamFailure = v.ToString()
@@ -119,4 +127,52 @@ func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogTy
 		r.ResponseCode >= 500
 
 	l.sink.Send(r)
+}
+
+// responseFlags converts the access logger uint64 bitmask to Envoy's
+// human-readable flag string (e.g. "UF,UH,UT"). Bit positions match
+// CoreResponseFlag enum in abi.h.
+func responseFlags(mask uint64) string {
+	if mask == 0 {
+		return ""
+	}
+	names := [...]string{
+		"LH", "UH", "UT", "LR", "UR", "UF", "UC", "UO",
+		"NR", "DI", "FI", "RL", "UAEX", "RLSE", "DC", "URX",
+		"SI", "IH", "DPE", "UMSDR", "RFCF", "NFCF", "DT", "UPE",
+		"NC", "OM",
+	}
+	var out []string
+	for i, name := range names {
+		if mask&(1<<uint(i)) != 0 {
+			out = append(out, name)
+		}
+	}
+	for i := len(names); i < 64; i++ {
+		if mask&(1<<uint(i)) != 0 {
+			out = append(out, fmt.Sprintf("0x%x", uint64(1)<<uint(i)))
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// buildMinimalRecord constructs a record for requests where the response handler
+// never fired (e.g. client disconnect before upstream responded). All fields
+// that require response headers are left empty.
+func (l *alLogger) buildMinimalRecord(h shared.AccessLoggerHandle, requestID string) *requestuisink.Record {
+	r := &requestuisink.Record{RequestID: requestID}
+	// Request attributes via header map (attribute IDs may not be available in access logger context).
+	if v, ok := h.GetHeader(shared.HttpHeaderTypeRequest, ":method"); ok {
+		r.Method = v.ToString()
+	}
+	if v, ok := h.GetHeader(shared.HttpHeaderTypeRequest, ":path"); ok {
+		r.Path = v.ToString()
+	}
+	if v, ok := h.GetHeader(shared.HttpHeaderTypeRequest, ":authority"); ok {
+		r.Host = v.ToString()
+	}
+	if v, ok := h.GetAttributeString(shared.AttributeIDUpstreamAddress); ok {
+		r.UpstreamAddress = v.ToString()
+	}
+	return r
 }

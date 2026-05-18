@@ -19,6 +19,9 @@
 package requestlogger
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/dio/luwes/shared"
 )
 
@@ -80,8 +83,8 @@ func (l *accessLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessL
 	if v, ok := h.GetAttributeString(shared.AttributeIDResponseCodeDetails); ok && v.Len > 0 {
 		r.responseCodeDetails = v.ToString()
 	}
-	if v, ok := h.GetAttributeString(shared.AttributeIDResponseFlags); ok && v.Len > 0 {
-		r.responseFlags = v.ToString()
+	if flags := responseFlags(h.GetResponseFlags()); flags != "" {
+		r.responseFlags = flags
 	}
 	if v, ok := h.GetAttributeString(shared.AttributeIDUpstreamTransportFailureReason); ok && v.Len > 0 {
 		r.upstreamFailure = v.ToString()
@@ -106,4 +109,31 @@ func emitRecord(h shared.AccessLoggerHandle, r *record) {
 		r.errorDetails, r.responseCodeDetails, r.upstreamFailure,
 		r.traceID, r.spanID,
 	)
+}
+
+// responseFlags converts the access logger uint64 bitmask to Envoy's
+// human-readable flag string (e.g. "UF,UH,UT"). Bit positions match
+// CoreResponseFlag enum in abi.h.
+func responseFlags(mask uint64) string {
+	if mask == 0 {
+		return ""
+	}
+	names := [...]string{
+		"LH", "UH", "UT", "LR", "UR", "UF", "UC", "UO",
+		"NR", "DI", "FI", "RL", "UAEX", "RLSE", "DC", "URX",
+		"SI", "IH", "DPE", "UMSDR", "RFCF", "NFCF", "DT", "UPE",
+		"NC", "OM",
+	}
+	var out []string
+	for i, name := range names {
+		if mask&(1<<uint(i)) != 0 {
+			out = append(out, name)
+		}
+	}
+	for i := len(names); i < 64; i++ {
+		if mask&(1<<uint(i)) != 0 {
+			out = append(out, fmt.Sprintf("0x%x", uint64(1)<<uint(i)))
+		}
+	}
+	return strings.Join(out, ",")
 }

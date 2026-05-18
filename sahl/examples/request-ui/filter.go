@@ -118,6 +118,12 @@ func Register(name string, s *requestuisink.Sink, pending *PendingRecords) {
 				if addr, ok := w.GetAttributeString(shared.AttributeIDUpstreamAddress); ok {
 					st.upstreamAddress = addr.ToString()
 				}
+				// Capture Envoy-generated local reply details (upstream timeout,
+				// circuit breaker, rate limit). Non-empty only when Envoy
+				// synthesized the response rather than forwarding from upstream.
+				if d := w.LocalReplyDetails(); d != "" {
+					st.errorDetails = d
+				}
 				if c.RecordResponseHeaders && chunk.Headers != nil {
 					st.responseHeaders = copyHeaders(chunk.Headers.GetAll())
 				}

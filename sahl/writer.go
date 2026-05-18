@@ -19,9 +19,10 @@ type Writer struct {
 	metaMuts    []metaMut
 	counterMuts []counterMut
 
-	responded    bool // Send/SendBytes was called
-	routeCleared bool
-	localResp    *localResponseMut // queued local response, applied in flush
+	localReplyDetails string // set by OnLocalReply before OnResponseHeaders fires
+	responded         bool   // Send/SendBytes was called
+	routeCleared      bool
+	localResp         *localResponseMut // queued local response, applied in flush
 
 	// Go() state
 	goStarted bool
@@ -79,6 +80,7 @@ func (w *Writer) reset(handle shared.HttpFilterHandle, scheduler shared.Schedule
 	w.respHdrMuts = w.respHdrMuts[:0]
 	w.metaMuts = w.metaMuts[:0]
 	w.counterMuts = w.counterMuts[:0]
+	w.localReplyDetails = ""
 	w.responded = false
 	w.routeCleared = false
 	w.localResp = nil
@@ -332,4 +334,12 @@ func (w *Writer) flush(continueReq bool) {
 	if continueReq {
 		w.handle.ContinueRequest()
 	}
+}
+
+// LocalReplyDetails returns the details string from the most recent OnLocalReply
+// callback. Non-empty only when Envoy generated a local reply (e.g. upstream
+// timeout, circuit breaker, rate limit). Empty for normal upstream responses.
+// Valid during the response handler call.
+func (w *Writer) LocalReplyDetails() string {
+	return w.localReplyDetails
 }

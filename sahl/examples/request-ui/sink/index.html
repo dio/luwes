@@ -44,6 +44,7 @@ td.status-4xx{color:#ff9800}
 td.status-5xx{color:#ef5350}
 td.flags{color:#ef5350;font-size:11px}
 td.details{color:#ef5350;font-size:11px}
+td.details.dim{color:#666;font-size:11px}
 #detail{display:none;position:fixed;right:0;top:0;bottom:0;width:520px;background:#131313;border-left:1px solid #2a2a2a;overflow-y:auto;padding:16px;z-index:20}
 #detail.open{display:block}
 #detail h2{font-size:13px;color:#fff;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
@@ -116,15 +117,21 @@ function statusClass(code) {
 
 function errorText(r) {
   if (r.error_details) return r.error_details;
-  if (r.response_code_details && r.response_code_details !== 'via_upstream') return r.response_code_details;
   if (r.upstream_failure) return r.upstream_failure;
+  if (r.response_code_details && r.response_code_details !== 'via_upstream') return r.response_code_details;
   return '';
+}
+function detailsText(r) {
+  const e = errorText(r);
+  if (e) return {text: e, dim: false};
+  if (r.response_code_details) return {text: r.response_code_details, dim: true};
+  return {text: '', dim: false};
 }
 
 function rowHTML(r) {
   const cls = r.has_error ? 'err' : (r.duration_ms > 500 ? 'slow' : '');
   const sc = statusClass(r.response_code);
-  const err = errorText(r);
+  const det = detailsText(r);
   const ts = r.timestamp ? r.timestamp.replace('T',' ').replace('Z','') : '';
   return '<tr class="'+cls+'" data-id="'+r.id+'" onclick="showDetail('+r.id+')">'
     + '<td>'+r.id+'</td>'
@@ -134,7 +141,7 @@ function rowHTML(r) {
     + '<td class="'+sc+'">'+(r.response_code||'')+'</td>'
     + '<td>'+(r.duration_ms ? r.duration_ms.toFixed(1)+'ms' : '')+'</td>'
     + '<td class="flags">'+esc(r.response_flags||'')+'</td>'
-    + '<td class="details">'+esc(err)+'</td>'
+    + '<td class="details'+(det.dim?' dim':'')+'" title="'+esc(det.text)+'">'+esc(det.text)+'</td>'
     + '</tr>';
 }
 

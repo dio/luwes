@@ -293,6 +293,17 @@ func (f *sahlFilter) OnHttpStreamReset(streamID uint64, reason shared.HttpStream
 	w.flush(!w.responded)
 }
 
+// OnLocalReply captures the Envoy-generated error details string and stores
+// it on the Writer so response handlers can read it via w.LocalReplyDetails().
+// Fires for Envoy-generated local replies (upstream timeout, circuit breaker,
+// rate limit, etc.) BEFORE OnResponseHeaders.
+func (f *sahlFilter) OnLocalReply(responseCode uint32, details shared.UnsafeEnvoyBuffer, _ bool) shared.LocalReplyStatus {
+	if f.writer != nil && details.Len > 0 {
+		f.writer.localReplyDetails = details.ToString()
+	}
+	return shared.LocalReplyStatusContinue
+}
+
 func (f *sahlFilter) OnStreamComplete() {
 	// Mark stream as done before anything else. Guards late-firing callout and
 	// stream callbacks (OnHttpCalloutDone, OnHttpStreamComplete, OnHttpStreamReset)
