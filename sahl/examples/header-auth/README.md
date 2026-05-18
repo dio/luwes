@@ -1,4 +1,4 @@
-# header-auth (sahl)
+# header-auth
 
 The sahl port of `examples/header-auth`. Same API key authentication logic,
 implemented with [sahl.Register] instead of the raw luwes SDK.

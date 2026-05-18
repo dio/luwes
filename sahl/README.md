@@ -358,7 +358,7 @@ Comparison:
 | raw luwes (`GetOneInto`) | 0 |
 | sahl (`Peek`) | 3 |
 
-## Example: header-auth-sahl
+## Example: sahl/examples/header-auth
 
 `sahl/examples/header-auth` reimplements `examples/header-auth` using sahl.
 Compare them:
@@ -382,7 +382,7 @@ func (f *Filter) OnRequestHeaders(headers shared.HeaderMap, _ bool) shared.Heade
 // + Factory with sync.Pool, Create, OnDestroy, OnStreamComplete ...
 ```
 
-**sahl (header-auth-sahl):**
+**sahl (header-auth):**
 ```go
 func Handler(w *sahl.Writer, r *sahl.Request) {
     key, ok := r.Header.Peek("x-api-key")
