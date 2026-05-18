@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: requi
+      POSTGRES_PASSWORD: requi
+      POSTGRES_DB: requi
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U requi -d requi"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  upstream:
+    image: python:3.12-alpine
+    command: >
+      python3 -c "
+      import http.server, json, time, random
+
+      class H(http.server.BaseHTTPRequestHandler):
+          def do_GET(self):
+              path = self.path
+              if path == '/slow':
+                  time.sleep(1.5)
+              if path == '/error':
+                  self.send_response(500)
+                  self.send_header('content-type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(b'{\"error\":\"internal\"}')
+                  return
+              if path == '/notfound':
+                  self.send_response(404)
+                  self.end_headers()
+                  return
+              self.send_response(200)
+              self.send_header('content-type', 'application/json')
+              self.end_headers()
+              self.wfile.write(json.dumps({'path': path, 'ok': True}).encode())
+          def do_POST(self):
+              n = int(self.headers.get('content-length', 0))
+              body = self.rfile.read(n)
+              self.send_response(200)
+              self.send_header('content-type', 'application/json')
+              self.end_headers()
+              self.wfile.write(json.dumps({'received': len(body)}).encode())
+          def log_message(self, *a): pass
+
+      http.server.HTTPServer(('0.0.0.0', 8080), H).serve_forever()
+      "
+    ports:
+      - "8080:8080"
+
+  envoy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # .so is built on the host: make build-linux-amd64 EXAMPLE=sahl/request-ui
+      - ../../../dist/librequest-ui.so:/so/librequest-ui.so:ro
+    ports:
+      - "10000:10000"   # proxied upstream
+      - "9901:9901"     # Envoy admin
+      - "6062:6062"     # request-ui web UI + API + SSE
+    environment:
+      REQUI_DSN: "postgres://requi:requi@postgres:5432/requi?sslmode=disable"
+      REQUI_ADDR: "0.0.0.0:6062"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      upstream:
+        condition: service_started
+
+  # load-gen: fires a mix of success, slow, error, 404, and POST requests.
+  # Lets you see all request categories populate in the UI without manual curl.
+  load-gen:
+    image: alpine/curl:latest
+    command: >
+      sh -c "
+      while true; do
+        for path in /ok /ok /ok /slow /error /notfound /api/v1/chat; do
+          curl -s -o /dev/null http://envoy:10000$$path &
+        done
+        curl -s -o /dev/null -X POST http://envoy:10000/api/v1/completions \
+          -H 'content-type: application/json' \
+          -d '{\"model\":\"gpt-4\",\"messages\":[]}' &
+        sleep 1
+      done
+      "
+    depends_on:
+      envoy:
+        condition: service_started
+
+volumes:
+  pg_data:

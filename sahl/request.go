@@ -137,6 +137,16 @@ func (h *Header) Peek(key string) (string, bool) {
 	return unsafe.String(buf.Ptr, buf.Len), true
 }
 
+// GetAll returns all request headers as unsafe key-value pairs.
+// Values point into Envoy-owned memory: valid only during the current callback.
+// Call .ToString() on each buffer to copy into Go memory if you need to retain
+// the values past the handler return.
+//
+// Costs 1 alloc (the returned slice). Use sparingly on hot paths.
+func (h *Header) GetAll() [][2]shared.UnsafeEnvoyBuffer {
+	return h.hm.GetAll()
+}
+
 // reset clears the cache and rewires the underlying HeaderMap.
 // Called from Request.reset. The cache map is reused (cleared, not reallocated)
 // so after a few requests the map alloc disappears from the hot path.

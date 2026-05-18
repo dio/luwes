@@ -279,6 +279,31 @@ func (w *Writer) AppendResponseBody(data []byte) {
 // returned) and ContinueRequest must be called to resume processing.
 // For synchronous handlers, the caller returns HeadersStatusContinue directly;
 // calling ContinueRequest here too would double-continue and corrupt state.
+// GetAttributeString returns a string attribute from the current stream.
+// Delegates directly to the underlying handle. Valid in any callback.
+// The returned UnsafeEnvoyBuffer points into Envoy memory: valid only for
+// the duration of the current callback. Call .ToString() to copy if needed.
+func (w *Writer) GetAttributeString(id shared.AttributeID) (shared.UnsafeEnvoyBuffer, bool) {
+	return w.handle.GetAttributeString(id)
+}
+
+// GetAttributeNumber returns a numeric attribute from the current stream.
+func (w *Writer) GetAttributeNumber(id shared.AttributeID) (float64, bool) {
+	return w.handle.GetAttributeNumber(id)
+}
+
+// GetAttributeBool returns a boolean attribute from the current stream.
+func (w *Writer) GetAttributeBool(id shared.AttributeID) (bool, bool) {
+	return w.handle.GetAttributeBool(id)
+}
+
+// ActiveSpan returns the active tracing span for the current stream.
+// Returns nil if no tracing provider is configured.
+// All Span methods guard for nil: it is safe to call methods on a nil Span.
+func (w *Writer) ActiveSpan() shared.Span {
+	return w.handle.GetActiveSpan()
+}
+
 func (w *Writer) flush(continueReq bool) {
 	if w.localResp != nil {
 		w.handle.SendLocalResponse(w.localResp.statusCode, w.localResp.headers, w.localResp.body, "sahl")

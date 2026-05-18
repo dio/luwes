@@ -15,8 +15,11 @@ import (
 //   - Subsequently called in each OnResponseBody with Data set to the current
 //     chunk. The chunk is Envoy-owned memory; copy if you need it past the call.
 //   - EndStream is true on the final OnResponseBody call. No further calls occur.
+//
+// ResponseChunk carries the response state for each [ResponseHandlerFunc] call.
 type ResponseChunk struct {
 	// StatusCode is the HTTP response status (e.g. 200).
+	// Set on the headers call; 0 during body calls.
 	StatusCode int
 
 	// ContentType is the value of the Content-Type response header,
@@ -29,6 +32,12 @@ type ResponseChunk struct {
 	// Empty for clean upstream application responses.
 	// See: https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage
 	ResponseFlags string
+
+	// Headers is the full response header map, available only during the
+	// headers call (StatusCode != 0, Data == nil). Nil during body calls.
+	// Values point into Envoy-owned memory: copy with .ToString() if you need
+	// to retain them past the current callback.
+	Headers shared.HeaderMap
 
 	// Data is the current body chunk. Nil during the OnResponseHeaders call.
 	// Points into Envoy-owned memory; valid only during this call.
@@ -99,6 +108,7 @@ func (f *sahlFilter) onResponseHeaders(headers shared.HeaderMap) {
 
 	f.respState.chunk.Data = nil
 	f.respState.chunk.EndStream = false
+	f.respState.chunk.Headers = headers
 	f.respState.chunk.Context = &f.respState.ctx
 	f.handler.responseFn(f.writer, &f.respState.chunk)
 }
@@ -118,6 +128,7 @@ func (f *sahlFilter) onResponseBody(body shared.BodyBuffer, endStream bool) {
 	}
 	f.respState.chunk.Data = data
 	f.respState.chunk.EndStream = endStream
+	f.respState.chunk.Headers = nil // only valid during the headers call
 	f.respState.chunk.Context = &f.respState.ctx
 	f.handler.responseFn(f.writer, &f.respState.chunk)
 }
