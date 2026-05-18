@@ -92,6 +92,12 @@ type sahlFilter struct {
 
 	// body buffering state for r.Body()
 	bodyDone bool
+
+	// streamDone is set by OnStreamComplete. Guards OnHttpCalloutDone and
+	// OnHttpStream* callbacks: if the downstream disconnected while a callout
+	// or stream was in-flight, Envoy may fire these callbacks late. Calling
+	// the continuation fn or ContinueRequest on a completed stream is unsafe.
+	streamDone bool
 }
 
 var filterPool = sync.Pool{New: func() any { return &sahlFilter{} }}
@@ -105,6 +111,7 @@ func newSahlFilter(name string, def *filterDef, handle shared.HttpFilterHandle) 
 	f.handler = def
 	f.handle = handle
 	f.bodyDone = false
+	f.streamDone = false
 	return f
 }
 
@@ -195,6 +202,12 @@ func (f *sahlFilter) OnHttpCalloutDone(
 	headers [][2]shared.UnsafeEnvoyBuffer,
 	body []shared.UnsafeEnvoyBuffer,
 ) {
+	// Guard: downstream may have disconnected while the callout was in-flight.
+	// OnStreamComplete fires before this callback in that case. Skip fn and
+	// flush to avoid calling ContinueRequest on a completed stream.
+	if f.streamDone {
+		return
+	}
 	w := f.writer
 	if w == nil || w.calloutFn == nil {
 		return
@@ -235,6 +248,9 @@ func (f *sahlFilter) OnHttpStreamTrailers(streamID uint64, trailers [][2]shared.
 // OnHttpStreamComplete implements shared.HttpStreamCallback.
 // Fires the Complete event, then flushes mutations and calls ContinueRequest.
 func (f *sahlFilter) OnHttpStreamComplete(streamID uint64) {
+	if f.streamDone {
+		return
+	}
 	w := f.writer
 	if w == nil {
 		return
@@ -249,6 +265,9 @@ func (f *sahlFilter) OnHttpStreamComplete(streamID uint64) {
 // OnHttpStreamReset implements shared.HttpStreamCallback.
 // Fires the Reset event. The event fn is responsible for calling w.Send if needed.
 func (f *sahlFilter) OnHttpStreamReset(streamID uint64, reason shared.HttpStreamResetReason) {
+	if f.streamDone {
+		return
+	}
 	w := f.writer
 	if w == nil || w.streamEventFn == nil {
 		return
@@ -261,6 +280,10 @@ func (f *sahlFilter) OnHttpStreamReset(streamID uint64, reason shared.HttpStream
 }
 
 func (f *sahlFilter) OnStreamComplete() {
+	// Mark stream as done before anything else. Guards late-firing callout and
+	// stream callbacks (OnHttpCalloutDone, OnHttpStreamComplete, OnHttpStreamReset)
+	// that Envoy may deliver after the downstream has disconnected.
+	f.streamDone = true
 	// Flush response-side mutations (IncrementCounter, SetMetadata) queued by
 	// the response observer. This is the guaranteed-last point where the handle
 	// is still valid and the response body has been fully delivered.
