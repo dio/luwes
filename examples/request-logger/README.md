@@ -148,11 +148,25 @@ GET    /notfound                         404      1ms
 GET    /slow                             200   1502ms
 POST   /v1/chat/completions              200      4ms
 POST   /v1/messages                      200      3ms
+GET    /delayed (cancelled)                0    200ms
 GET    /ok                               200      1ms
 GET    /ok                               200      1ms
 -------------------------------------------------------
 done: check Envoy stdout for JSON access log records
 ```
+
+The `/delayed` row is the downstream cancellation scenario: Envoy's fault filter
+holds the request for 5 seconds before forwarding to upstream. The client cancels
+after 200ms. Upstream is never contacted. In the Envoy access log you will see:
+
+```json
+{"method":"GET","path":"/delayed","status":0,"flags":"DC","duration_ms":200,
+ "upstream_host":"-","code_details":"downstream_remote_disconnect"}
+```
+
+`DC` (downstream connection termination) and `status=0` confirm upstream was
+never reached. This is the key distinction from `UT` (upstream timeout) where
+Envoy did attempt the upstream but it timed out.
 
 Each request produces a JSON access log record on Envoy's stdout:
 

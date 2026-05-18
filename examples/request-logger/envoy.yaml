@@ -99,10 +99,6 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
                       dynamic_module_config:
                         name: request-logger
-                      # Per-listener filter config. Adjust to taste.
-                      # record_request_body and record_response_body add latency
-                      # (full body buffered before forwarding). Enable only when
-                      # you need payload-level debugging.
                       filter_config:
                         "@type": type.googleapis.com/google.protobuf.StringValue
                         value: >
@@ -113,6 +109,12 @@ static_resources:
                             "record_response_body":    false,
                             "max_body_bytes":          4096
                           }
+                  # Fault injection filter: used to inject a pre-upstream delay on
+                  # /delayed so the testclient can cancel before upstream is reached.
+                  # No global fault; per-route config activates it only on /delayed.
+                  - name: envoy.filters.http.fault
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -123,6 +125,21 @@ static_resources:
                     - name: local
                       domains: ["*"]
                       routes:
+                        # /delayed: fault filter injects a 5s delay before Envoy
+                        # connects to upstream. Cancel the client within that window
+                        # and upstream is never contacted. Envoy records DC flag.
+                        - match: { prefix: "/delayed" }
+                          route:
+                            cluster: upstream
+                            timeout: 10s
+                          typed_per_filter_config:
+                            envoy.filters.http.fault:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+                              delay:
+                                fixed_delay: 5s
+                                percentage:
+                                  numerator: 100
+                                  denominator: HUNDRED
                         - match: { prefix: "/" }
                           route:
                             cluster: upstream
