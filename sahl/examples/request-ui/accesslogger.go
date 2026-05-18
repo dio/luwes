@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	requestuisink "github.com/dio/luwes/sahl/examples/request-ui/sink"
+	"github.com/dio/luwes/sahl/examples/request-ui/sink"
 	"github.com/dio/luwes/shared"
 )
 
@@ -25,19 +25,19 @@ type PendingRecords struct {
 }
 
 // Store deposits a record for the access logger to consume.
-func (p *PendingRecords) Store(requestID string, r *requestuisink.Record) {
+func (p *PendingRecords) Store(requestID string, r *sink.Record) {
 	if requestID != "" {
 		p.m.Store(requestID, r)
 	}
 }
 
 // LoadAndDelete retrieves and removes a record by request ID.
-func (p *PendingRecords) LoadAndDelete(requestID string) (*requestuisink.Record, bool) {
+func (p *PendingRecords) LoadAndDelete(requestID string) (*sink.Record, bool) {
 	val, ok := p.m.LoadAndDelete(requestID)
 	if !ok {
 		return nil, false
 	}
-	r, ok := val.(*requestuisink.Record)
+	r, ok := val.(*sink.Record)
 	return r, ok
 }
 
@@ -51,7 +51,7 @@ func (p *PendingRecords) Delete(requestID string) {
 // them to the sink.
 func NewAccessLoggerFactory(
 	pending *PendingRecords,
-	s *requestuisink.Sink,
+	s *sink.Sink,
 ) func(shared.AccessLoggerConfigHandle, []byte) (shared.AccessLoggerFactory, error) {
 	return func(_ shared.AccessLoggerConfigHandle, _ []byte) (shared.AccessLoggerFactory, error) {
 		return &alFactory{pending: pending, sink: s}, nil
@@ -60,7 +60,7 @@ func NewAccessLoggerFactory(
 
 type alFactory struct {
 	pending *PendingRecords
-	sink    *requestuisink.Sink
+	sink    *sink.Sink
 }
 
 func (f *alFactory) NewLogger() shared.AccessLogger {
@@ -71,7 +71,7 @@ func (f *alFactory) OnDestroy() {}
 type alLogger struct {
 	shared.EmptyAccessLogger
 	pending *PendingRecords
-	sink    *requestuisink.Sink
+	sink    *sink.Sink
 }
 
 func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogType) {
@@ -221,8 +221,8 @@ func responseFlags(mask uint64) string {
 // buildMinimalRecord constructs a record for requests where the response handler
 // never fired (e.g. client disconnect before upstream responded). All fields
 // that require response headers are left empty.
-func (l *alLogger) buildMinimalRecord(h shared.AccessLoggerHandle, requestID string) *requestuisink.Record {
-	r := &requestuisink.Record{RequestID: requestID}
+func (l *alLogger) buildMinimalRecord(h shared.AccessLoggerHandle, requestID string) *sink.Record {
+	r := &sink.Record{RequestID: requestID}
 	// Request attributes via header map (attribute IDs may not be available in access logger context).
 	if v, ok := h.GetHeader(shared.HttpHeaderTypeRequest, ":method"); ok {
 		r.Method = v.ToString()
