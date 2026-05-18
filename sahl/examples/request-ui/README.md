@@ -1,8 +1,13 @@
 # request-ui
 
 End-to-end request/response recorder: records every request (success and error)
-into Postgres and serves a near-realtime web UI for browsing, searching, and
-inspecting the full detail of each request.
+and serves a near-realtime web UI for browsing, searching, and inspecting the
+full detail of each request.
+
+Two storage backends, selected by `REQUI_MODE`:
+
+- `memory` (default for simulate): in-process ring buffer, zero dependencies
+- `postgres`: persists to Postgres, survives restarts, full-text search
 
 ## Architecture
 
@@ -228,6 +233,45 @@ make run EXAMPLE=sahl/request-ui
 ```
 
 **4. Open http://localhost:6062/**
+
+## Simulate (zero dependencies)
+
+No Envoy, no Docker, no Postgres. The simulate command generates synthetic
+traffic directly into an in-memory ring buffer and serves the same UI.
+
+```sh
+# Build once
+go build -o /tmp/requi-simulate ./sahl/examples/request-ui/cmd/simulate/
+
+# Run (memory mode is the default)
+REQUI_ADDR=0.0.0.0:6062 /tmp/requi-simulate
+```
+
+Open http://localhost:6062/ and the table starts populating immediately at
+~10 req/s. The generator covers every row type:
+
+| Scenario | Rate | UI color |
+|----------|------|----------|
+| Normal 200 | 50% | white |
+| Slow (>500ms) | 12% | yellow |
+| Upstream 5xx | 8% | red |
+| Upstream reset (UF) | 5% | red |
+| Timeout (UT) | 6% | red |
+| Circuit breaker (UO) | 4% | red |
+| No route (NR) | 3% | red |
+| Client disconnect (DC) | 4% | white -- not an upstream error |
+
+The ring holds 2000 records by default. Override with `REQUI_MEM_CAP=N`.
+History is lost on process exit.
+
+To persist to Postgres instead:
+
+```sh
+REQUI_MODE=postgres \
+REQUI_DSN=postgres://requi:requi@localhost:5432/requi?sslmode=disable \
+REQUI_ADDR=0.0.0.0:6062 \
+/tmp/requi-simulate
+```
 
 ## Filter structure
 
