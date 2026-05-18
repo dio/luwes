@@ -45,7 +45,9 @@ const (
 	streamSahlAddr = "http://localhost:10006"
 	// Port 10007: do-sahl filter (w.Go + w.Do)
 	doSahlAddr = "http://localhost:10007"
-	adminAddr  = "http://localhost:9901"
+	// Port 10008: mutable-body-sahl filter (RegisterWithMutableResponse + ResponseFlags)
+	mutableBodySahlAddr = "http://localhost:10008"
+	adminAddr           = "http://localhost:9901"
 )
 
 var (
@@ -353,6 +355,46 @@ static_resources:
                             status: 200
                             body: { inline_string: "do ok" }
 
+    # Port 10008: mutable-body-sahl (RegisterWithMutableResponse + ResponseFlags)
+    - name: mutable-body-sahl
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 10008 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: mutable_body_sahl
+                http_filters:
+                  - name: mutable-body-sahl
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                      dynamic_module_config:
+                        name: e2e
+                      filter_name: mutable-body-sahl
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: mutable_body_sahl
+                  virtual_hosts:
+                    - name: mutable_body
+                      domains: ["*"]
+                      response_headers_to_add:
+                        - header:
+                            key: x-envoy-response-flags
+                            value: "%%RESPONSE_FLAGS%%"
+                          keep_empty_value: true
+                      routes:
+                        - match: { prefix: "/ok" }
+                          route:
+                            cluster: callout_upstream
+                            timeout: 5s
+                        - match: { prefix: "/infra-fail" }
+                          route:
+                            cluster: dead_upstream
+                            timeout: 2s
+
     # Port 10003: auth (RegisterFactory, admin listener -- key-admin, key-ops)
     - name: auth-admin
       address:
@@ -443,6 +485,17 @@ static_resources:
               - endpoint:
                   address:
                     socket_address: { address: 127.0.0.1, port_value: %d }
+
+    - name: dead_upstream
+      connect_timeout: 1s
+      type: STATIC
+      load_assignment:
+        cluster_name: dead_upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 19999 }
 
 admin:
   address:

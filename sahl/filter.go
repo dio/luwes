@@ -26,9 +26,10 @@ func (f *configFactory) Create(
 
 	// Resolve the handler: factory path produces a new HandlerFunc per config instance.
 	def := &filterDef{
-		handler:    f.def.handler,
-		responseFn: f.def.responseFn,
-		bodyAware:  f.def.bodyAware,
+		handler:         f.def.handler,
+		responseFn:      f.def.responseFn,
+		bodyAware:       f.def.bodyAware,
+		mutableResponse: f.def.mutableResponse,
 	}
 
 	switch {

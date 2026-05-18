@@ -9,7 +9,11 @@ import (
 )
 
 func strBuf(s string) shared.UnsafeEnvoyBuffer {
-	return shared.UnsafeEnvoyBuffer{Ptr: nil, Len: uint64(len(s))}
+	if s == "" {
+		return shared.UnsafeEnvoyBuffer{}
+	}
+	b := []byte(s)
+	return shared.UnsafeEnvoyBuffer{Ptr: &b[0], Len: uint64(len(b))}
 }
 
 // TestHTTPCallout_SuccessPath verifies:

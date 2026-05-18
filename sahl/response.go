@@ -89,6 +89,14 @@ func (f *sahlFilter) onResponseHeaders(headers shared.HeaderMap) {
 		f.respState.chunk.ResponseFlags = flagsBuf.ToString()
 	}
 
+	// Mutable-response mode: remove Content-Length so Envoy does not commit a
+	// fixed body size. The body will be replaced by SetResponseBody; the new
+	// length is unknown at header time. Without this, replacing the body with a
+	// different-length payload causes HTTP protocol errors on the downstream client.
+	if f.handler.mutableResponse {
+		headers.Remove("content-length")
+	}
+
 	f.respState.chunk.Data = nil
 	f.respState.chunk.EndStream = false
 	f.respState.chunk.Context = &f.respState.ctx

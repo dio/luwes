@@ -31,6 +31,14 @@ func startMockCalloutServer() int {
 		fmt.Fprint(w, `{"ok":true}`)
 	})
 
+	// /ok is used by mutable-body-sahl e2e test: returns 200 with a plain body.
+	// ResponseFlags will be empty (real upstream response, no infrastructure failure).
+	mux.HandleFunc("/ok", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"original":true}`)
+	})
+
 	mux.HandleFunc("/auth-deny", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"error":"denied"}`)
