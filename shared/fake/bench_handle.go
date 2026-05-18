@@ -68,3 +68,40 @@ func asciiToLower(s string) string {
 // -- compile-time interface checks --
 var _ shared.HeaderMap = (*SilentHeaderMap)(nil)
 var _ shared.HttpFilterHandle = (*BenchFilterHandle)(nil)
+
+// SilentBodyBuffer wraps FakeBodyBuffer but returns a pre-allocated
+// UnsafeEnvoyBuffer slice instead of allocating one on each GetChunks call.
+// Use in benchmarks to eliminate the GetChunks alloc noise from the fake.
+type SilentBodyBuffer struct {
+	*FakeBodyBuffer
+	chunks []shared.UnsafeEnvoyBuffer // pre-allocated, length 1
+}
+
+// NewSilentBodyBuffer wraps body in a SilentBodyBuffer.
+func NewSilentBodyBuffer(body []byte) *SilentBodyBuffer {
+	b := &SilentBodyBuffer{
+		FakeBodyBuffer: NewFakeBodyBuffer(body),
+		chunks:         make([]shared.UnsafeEnvoyBuffer, 1),
+	}
+	if len(body) > 0 {
+		b.chunks[0] = shared.UnsafeEnvoyBuffer{
+			Ptr: &body[0],
+			Len: uint64(len(body)),
+		}
+	}
+	return b
+}
+
+// GetChunks returns the pre-allocated slice without allocation.
+func (b *SilentBodyBuffer) GetChunks() []shared.UnsafeEnvoyBuffer {
+	if len(b.Body) == 0 {
+		return b.chunks[:0]
+	}
+	b.chunks[0] = shared.UnsafeEnvoyBuffer{
+		Ptr: &b.Body[0],
+		Len: uint64(len(b.Body)),
+	}
+	return b.chunks[:1]
+}
+
+var _ shared.BodyBuffer = (*SilentBodyBuffer)(nil)
