@@ -48,24 +48,30 @@ input_tokens=%DYNAMIC_METADATA(sse_tap:input_tokens)%
 output_tokens=%DYNAMIC_METADATA(sse_tap:output_tokens)%
 ```
 
-## Build
+## Make targets
+
+From this directory:
+
+```sh
+make build   # compile libsse-tap.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
 
 ```sh
 make build EXAMPLE=sahl/sse-tap
-# or manually (from repo root):
+make run   EXAMPLE=sahl/sse-tap
+```
+
+Or manually (from repo root):
+
+```sh
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
   -o dist/libsse-tap.so ./sahl/examples/sse-tap/cmd
-```
 
-## Run
-
-```sh
-make run EXAMPLE=sahl/sse-tap
-```
-
-Or manually:
-
-```sh
 GODEBUG=cgocheck=0 \
 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
 .bin/envoy -c sahl/examples/sse-tap/envoy.yaml --log-level warning
@@ -161,9 +167,11 @@ artifact as sahl request benchmarks).
 - `BodyStatusContinue` (observe mode): chunks forwarded to client, zero latency added
 - `ExtractUsage` exported for unit testing without Envoy
 
-## Run unit tests
+## Unit tests
 
 ```sh
+make test          # from this directory
+# or from repo root:
 make examples/test/sahl/examples/sse-tap
 ```
 

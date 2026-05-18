@@ -1,14 +1,14 @@
 # auth
 
-Demonstrates [sahl.RegisterFactory] -- the pattern for filters that carry
+Demonstrates [sahl.RegisterFactory]: the pattern for filters that carry
 per-listener state: a parsed config and isolated metric IDs.
 
 ## Why RegisterFactory
 
 `sahl.Register` gives you a single global `HandlerFunc`. That is fine when all
 requests share the same behavior. When you need each Envoy listener (or
-virtual-host) to carry its own config -- different allowed keys, different
-upstream clusters, different metric scopes -- use `RegisterFactory`.
+virtual-host) to carry its own config (different allowed keys, different
+upstream clusters, different metric scopes), use `RegisterFactory`.
 
 Envoy calls the factory once per filter-chain with the per-listener JSON config
 attached to the listener. The factory parses that JSON and returns a
@@ -51,13 +51,22 @@ the request.
 | header        | x-api-key    | Header name to read the key from         |
 | metadata_ns   | auth         | Envoy metadata namespace for logging     |
 
-## Run
+## Make targets
 
-Build the .so and run Envoy with the two-listener config:
+From this directory:
+
+```sh
+make build   # compile libauth.so
+make run     # build + start Envoy with two-listener config (foreground)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
 
 ```sh
 make build EXAMPLE=sahl/auth
-make run EXAMPLE=sahl/auth
+make run   EXAMPLE=sahl/auth
 ```
 
 Or manually (from repo root):
@@ -87,19 +96,21 @@ curl -si localhost:10000/                               # 401 missing key
 curl -si localhost:10001/                               # 401 missing key
 ```
 
-## Run unit tests
+## Unit tests
 
 ```sh
+make test          # from this directory
+# or from repo root:
 make examples/test/sahl/examples/auth
 ```
 
 ## Code structure
 
 ```
-auth.go          -- Config, AuthFilter, factory registration
-auth_test.go     -- 6 unit tests (no Envoy binary needed)
-cmd/main.go      -- module entry point (c-shared build target)
-envoy.yaml       -- two listeners with different allowed_keys
+auth.go          Config, AuthFilter, factory registration
+auth_test.go     6 unit tests (no Envoy binary needed)
+cmd/main.go      module entry point (c-shared build target)
+envoy.yaml       two listeners with different allowed_keys
 ```
 
 ## Allocation analysis

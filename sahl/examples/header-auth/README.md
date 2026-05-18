@@ -59,28 +59,38 @@ Compare to raw luwes header-auth: 0 allocs/op on the accept path (no pre-copies,
 GetOneInto is zero-alloc). The 3-alloc floor is the cost of sahl's Method/Path/Host
 pre-copy convenience.
 
-## Build
+## Make targets
+
+From this directory:
+
+```sh
+make build   # compile libheader-auth.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
 
 ```sh
 make build EXAMPLE=sahl/header-auth
-# or manually (from repo root):
+make run   EXAMPLE=sahl/header-auth
+```
+
+Or manually (from repo root):
+
+```sh
 CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
   -o dist/libheader-auth.so ./sahl/examples/header-auth/cmd
+
+GODEBUG=cgocheck=0 \
+ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
+.bin/envoy -c sahl/examples/header-auth/envoy.yaml --log-level warning
 ```
 
-## Run
+With Envoy running, in a separate terminal:
 
 ```sh
-make run EXAMPLE=sahl/header-auth
-```
-
-## Test
-
-```sh
-# Run unit tests (no Envoy required)
-make examples/test/sahl/examples/header-auth
-
-# With Envoy running, in a separate terminal:
 # Request without key (expect 401)
 curl -si http://localhost:10000/
 

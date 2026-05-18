@@ -1,6 +1,6 @@
 # spa
 
-Serve a Vite + React SPA directly from an Envoy dynamic module `.so` -- no file
+Serve a Vite + React SPA directly from an Envoy dynamic module `.so`: no file
 system access, no separate web server. Demonstrates `//go:embed`, SPA fallback
 routing, asset caching, and `w.SetResponseHeader` + `w.SendBytes`.
 
@@ -83,9 +83,9 @@ npm run build    # rebuild ui/dist/, then rebuild the .so
 
 ## What this demonstrates
 
-- `//go:embed ui/dist` -- bundle a complete Vite build into the `.so` at compile time
-- SPA fallback routing -- `index.html` for any unmatched path so React Router works on refresh
-- `w.SetResponseHeader` + `w.SendBytes` -- serve binary assets (JS bundles, CSS) from a filter
+- `//go:embed ui/dist`: bundle a complete Vite build into the `.so` at compile time
+- SPA fallback routing: `index.html` for any unmatched path so React Router works on refresh
+- `w.SetResponseHeader` + `w.SendBytes`: serve binary assets (JS bundles, CSS) from a filter
 - `w.SetResponseHeader("cache-control", "public, max-age=31536000, immutable")` for fingerprinted assets
 - Two filters in one `.so` sharing the same embedded filesystem
 - `sahl.Chain` with logging middleware on the `api-backend` filter

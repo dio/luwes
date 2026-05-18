@@ -135,12 +135,20 @@ The `envoy-otel.yaml` config wires:
 
 ## Make targets
 
-```sh
-# Build the .so
-make build EXAMPLE=observability
+From this directory:
 
-# Start Envoy with the filter
-make run EXAMPLE=observability
+```sh
+make build   # compile libobservability.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
+
+```sh
+make build EXAMPLE=observability
+make run   EXAMPLE=observability
 ```
 
 ## Manual steps

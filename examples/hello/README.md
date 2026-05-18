@@ -18,12 +18,20 @@ This is the starting point for writing a new luwes filter.
 
 ## Make targets
 
-```sh
-# Build the .so
-make build EXAMPLE=hello
+From this directory:
 
-# Start Envoy with the filter (runs in foreground, Ctrl-C to stop)
-make run EXAMPLE=hello
+```sh
+make build   # compile libhello.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
+
+```sh
+make build EXAMPLE=hello
+make run   EXAMPLE=hello
 ```
 
 ## Manual steps

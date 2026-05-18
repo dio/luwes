@@ -25,14 +25,20 @@ Demonstrates:
 
 ## Make targets
 
+From this directory:
+
 ```sh
-# Build the .so
-make build EXAMPLE=header-auth
+make build   # compile libheader-auth.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
 
-# Start Envoy with the filter (foreground, Ctrl-C to stop)
-make run EXAMPLE=header-auth
+From the repo root (also supports `make flamegraph EXAMPLE=header-auth`):
 
-# Capture a pprof flamegraph under load (requires hey)
+```sh
+make build      EXAMPLE=header-auth
+make run        EXAMPLE=header-auth
 make flamegraph EXAMPLE=header-auth
 ```
 

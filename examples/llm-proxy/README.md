@@ -44,23 +44,22 @@ Demonstrates:
 
 ## Make targets
 
-Run from the repo root:
+From this directory:
 
 ```sh
-# Build the .so for the host (dev/test)
-make build EXAMPLE=llm-proxy
+make build   # compile libllm-proxy.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
 
-# Start Envoy with the filter (foreground, Ctrl-C to stop)
-make run EXAMPLE=llm-proxy
+From the repo root (also supports flamegraph and cross-compile):
 
-# Run unit tests (pure Go, no Envoy required)
-make examples/test/examples/llm-proxy
-
-# Cross-compile for Linux amd64 (what CI builds)
-make build-linux-amd64 EXAMPLE=llm-proxy
-
-# Capture a pprof flamegraph under load (requires hey)
-make flamegraph EXAMPLE=llm-proxy
+```sh
+make build              EXAMPLE=llm-proxy
+make run                EXAMPLE=llm-proxy
+make flamegraph         EXAMPLE=llm-proxy
+make build-linux-amd64  EXAMPLE=llm-proxy
 ```
 
 ## Manual steps

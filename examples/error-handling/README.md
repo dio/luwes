@@ -121,11 +121,21 @@ requests that complete successfully (no flags set).
 
 ## Make targets
 
-```sh
-# Build the .so
-make build EXAMPLE=error-handling
+From this directory:
 
-# Start Envoy (foreground, Ctrl-C to stop)
+```sh
+make build   # compile liberror-handling.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
+
+```sh
+make build EXAMPLE=error-handling
+make run   EXAMPLE=error-handling
+```
 make run EXAMPLE=error-handling
 
 # Run unit tests (no Envoy required)

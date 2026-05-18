@@ -42,33 +42,36 @@ curl -s http://localhost:9901/stats | grep decoder
 Requires a `cluster_header` route and three clusters (`openai`, `anthropic`, `default`).
 See `envoy.yaml` for a complete example pointing at real providers.
 
-## Build
+## Make targets
+
+From this directory:
+
+```sh
+make build   # compile libdecoder.so
+make run     # build + start Envoy (foreground, Ctrl-C to stop)
+make test    # unit tests, no Envoy required
+make clean   # remove built .so
+```
+
+From the repo root:
 
 ```sh
 make build EXAMPLE=sahl/decoder
-# or manually (from repo root):
-CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
-  -o dist/libdecoder.so ./sahl/examples/decoder/cmd
+make run   EXAMPLE=sahl/decoder
 ```
 
-## Run
+Or manually (from repo root):
 
 ```sh
-make run EXAMPLE=sahl/decoder
-# or manually:
+CGO_ENABLED=1 go build -trimpath -buildmode=c-shared \
+  -o dist/libdecoder.so ./sahl/examples/decoder/cmd
+
 GODEBUG=cgocheck=0 \
 ENVOY_DYNAMIC_MODULES_SEARCH_PATH=$(pwd)/dist \
 .bin/envoy -c sahl/examples/decoder/envoy.yaml --log-level warning
 ```
 
-## Test
-
-```sh
-# Run unit tests (no Envoy required)
-make examples/test/sahl/examples/decoder
-```
-
-With Envoy running (`make run EXAMPLE=sahl/decoder`), in a separate terminal:
+With Envoy running, in a separate terminal:
 
 ```sh
 # Route to OpenAI
