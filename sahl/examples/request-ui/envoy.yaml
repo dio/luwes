@@ -35,6 +35,7 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
                       dynamic_module_config:
                         name: request-ui
+                      filter_name: request-ui
                       # Per-listener config. Adjust to taste.
                       # record_request_body / record_response_body buffer the full body
                       # before forwarding -- adds latency. Off by default.

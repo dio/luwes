@@ -11,20 +11,19 @@ static_resources:
                 stat_prefix: request_logger
                 generate_request_id: true  # ensures x-request-id on every request
 
-                # OTel tracing provider.
-                # Remove this block if you don't have an OTel collector.
-                # The filter still records all fields; span tagging is skipped
-                # when GetActiveSpan() returns nil.
-                tracing:
-                  provider:
-                    name: envoy.tracers.opentelemetry
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
-                      grpc_service:
-                        envoy_grpc:
-                          cluster_name: otel_collector
-                        timeout: 0.250s
-                      service_name: request-logger
+                # OTel tracing provider -- uncomment when an OTel collector is running.
+                # Without this block the filter still records all fields; span tagging
+                # is skipped when GetActiveSpan() returns nil.
+                # tracing:
+                #   provider:
+                #     name: envoy.tracers.opentelemetry
+                #     typed_config:
+                #       "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                #       grpc_service:
+                #         envoy_grpc:
+                #           cluster_name: otel_collector
+                #         timeout: 0.250s
+                #       service_name: request-logger
 
                 # Access log: two sinks.
                 #
@@ -99,6 +98,7 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
                       dynamic_module_config:
                         name: request-logger
+                      filter_name: request-logger
                       filter_config:
                         "@type": type.googleapis.com/google.protobuf.StringValue
                         value: >
@@ -159,23 +159,22 @@ static_resources:
                   address:
                     socket_address: { address: 127.0.0.1, port_value: 11000 }
 
-    # otel_collector: OpenTelemetry collector for traces and access logs.
-    # Remove if not using OTel.
-    - name: otel_collector
-      connect_timeout: 1s
-      type: STATIC
-      typed_extension_protocol_options:
-        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-          explicit_http_config:
-            http2_protocol_options: {}
-      load_assignment:
-        cluster_name: otel_collector
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address: { address: 127.0.0.1, port_value: 4317 }
+    # otel_collector: uncomment this cluster when using OTel tracing/access logs.
+    # - name: otel_collector
+    #   connect_timeout: 1s
+    #   type: STATIC
+    #   typed_extension_protocol_options:
+    #     envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+    #       "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+    #       explicit_http_config:
+    #         http2_protocol_options: {}
+    #   load_assignment:
+    #     cluster_name: otel_collector
+    #     endpoints:
+    #       - lb_endpoints:
+    #           - endpoint:
+    #               address:
+    #                 socket_address: { address: 127.0.0.1, port_value: 4317 }
 
 admin:
   address:

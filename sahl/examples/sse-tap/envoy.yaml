@@ -30,6 +30,9 @@ static_resources:
                       dynamic_module_config:
                         name: sse-tap
                       filter_name: sse-tap
+                      filter_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{}'
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
