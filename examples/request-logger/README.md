@@ -19,7 +19,8 @@ Every request accumulates a [record] across four callbacks:
 | `OnRequestBody` | `request_body` (when `record_request_body=true`) |
 | `OnResponseHeaders` | `upstream_status`, `upstream_address`, response headers (configurable) |
 | `OnLocalReply` | `error_details` (Envoy-generated errors: timeout, circuit breaker, rate limit) |
-| `OnStreamComplete` | `duration_ms`, `request_size_bytes`, `response_size_bytes`, `response_code`, `response_flags`, `response_code_details`, `upstream_failure` |
+| `OnStreamComplete` | deposits partial record into `pendingRecords`; span tagging |
+| `on_access_logger_log` | `duration_ms`, `request_size_bytes`, `response_size_bytes`, `response_code`, `response_flags`, `response_code_details`, `upstream_failure` (finalized values) |
 
 At stream completion, all fields are:
 
@@ -27,7 +28,13 @@ At stream completion, all fields are:
    can read them via `%DYNAMIC_METADATA(req_log:field)%`.
 2. Set as span tags on the active OTel span so fields appear as span attributes
    in Jaeger/Tempo/Grafana Tempo.
-3. Emitted as a single structured log line to Envoy's error log.
+3. Emitted as a structured log line to Envoy's error log by the access logger
+   after all finalized fields are populated.
+
+Fields marked "finalized" (`duration_ms`, `response_flags`, `response_code_details`,
+byte sizes) are unavailable from HTTP filter callbacks. They are populated by
+the dynamic module access logger (`on_access_logger_log`), which fires after Envoy
+finalizes `StreamInfo` -- after `OnStreamComplete` returns.
 
 ## Config
 
@@ -58,8 +65,8 @@ or a buffer overflows. The `details` string identifies the exact reason:
 `upstream_reset_before_response_started`, `response_timeout`,
 `upstream_overflow`, etc.
 
-**`response_flags`** (from `GetAttributeString(AttributeIDResponseFlags)` in
-`OnStreamComplete`): Envoy response flags. Key flags:
+**`response_flags`** (from `GetResponseFlags()` uint64 bitmask via the access
+logger, converted to comma-separated string): Envoy response flags. Key flags:
 
 | Flag | Meaning |
 |------|---------|

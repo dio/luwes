@@ -187,6 +187,50 @@ func (h *dymAccessLoggerHandle) GetWorkerIndex() uint32 {
 	return uint32(C.envoy_dynamic_module_callback_access_logger_get_worker_index(h.envoyPtr))
 }
 
+func (h *dymAccessLoggerHandle) GetTraceID() (shared.UnsafeEnvoyBuffer, bool) {
+	var result C.envoy_dynamic_module_type_envoy_buffer
+	if !bool(C.envoy_dynamic_module_callback_access_logger_get_trace_id(h.envoyPtr, &result)) {
+		return shared.UnsafeEnvoyBuffer{}, false
+	}
+	return envoyBufferToUnsafeEnvoyBuffer(result), true
+}
+
+func (h *dymAccessLoggerHandle) GetSpanID() (shared.UnsafeEnvoyBuffer, bool) {
+	var result C.envoy_dynamic_module_type_envoy_buffer
+	if !bool(C.envoy_dynamic_module_callback_access_logger_get_span_id(h.envoyPtr, &result)) {
+		return shared.UnsafeEnvoyBuffer{}, false
+	}
+	return envoyBufferToUnsafeEnvoyBuffer(result), true
+}
+
+func (h *dymAccessLoggerHandle) IsTraceSampled() bool {
+	return bool(C.envoy_dynamic_module_callback_access_logger_is_trace_sampled(h.envoyPtr))
+}
+
+func (h *dymAccessLoggerHandle) GetLocalReplyBody() (shared.UnsafeEnvoyBuffer, bool) {
+	var result C.envoy_dynamic_module_type_envoy_buffer
+	if !bool(C.envoy_dynamic_module_callback_access_logger_get_local_reply_body(h.envoyPtr, &result)) {
+		return shared.UnsafeEnvoyBuffer{}, false
+	}
+	return envoyBufferToUnsafeEnvoyBuffer(result), true
+}
+
+func (h *dymAccessLoggerHandle) GetUpstreamPoolReadyDurationNs() int64 {
+	return int64(C.envoy_dynamic_module_callback_access_logger_get_upstream_pool_ready_duration_ns(h.envoyPtr))
+}
+
+func (h *dymAccessLoggerHandle) GetUpstreamRequestAttemptCount() uint32 {
+	var result C.uint64_t
+	ok := C.envoy_dynamic_module_callback_access_logger_get_attribute_int(
+		h.envoyPtr,
+		(C.envoy_dynamic_module_type_attribute_id)(shared.AttributeIDUpstreamRequestAttemptCount),
+		&result)
+	if !bool(ok) || result == 0 {
+		return 1
+	}
+	return uint32(result)
+}
+
 func (h *dymAccessLoggerHandle) Log(level shared.LogLevel, format string, args ...any) {
 	hostLog(level, format, args)
 }

@@ -73,6 +73,28 @@ type Record struct {
 	RequestSizeBytes  float64 `json:"request_size_bytes"`
 	ResponseSizeBytes float64 `json:"response_size_bytes"`
 	ResponseCode      float64 `json:"response_code"`
+
+	// Finalized fields from access logger: timing
+	FirstUpstreamTxByteSentNs    int64   `json:"first_upstream_tx_byte_sent_ns"`
+	LastUpstreamRxByteReceivedNs int64   `json:"last_upstream_rx_byte_received_ns"`
+	UpstreamCxPoolReadyMs        float64 `json:"upstream_cx_pool_ready_ms"`
+
+	// Finalized fields from access logger: upstream
+	UpstreamLocalAddress    string `json:"upstream_local_address"`
+	UpstreamRequestAttempts uint32 `json:"upstream_request_attempts"`
+	RequestProtocol         string `json:"request_protocol"`
+
+	// Finalized fields from access logger: wire bytes
+	WireBytesReceived uint64 `json:"wire_bytes_received"`
+	WireBytesSent     uint64 `json:"wire_bytes_sent"`
+
+	// Finalized fields from access logger: tracing
+	TraceIDFinal string `json:"trace_id_final"`
+	SpanIDFinal  string `json:"span_id_final"`
+	TraceSampled bool   `json:"trace_sampled"`
+
+	// Finalized fields from access logger: local reply
+	LocalReplyBody string `json:"local_reply_body"`
 }
 
 // store is the internal storage interface. Both backends implement it.

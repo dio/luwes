@@ -8,11 +8,11 @@
 //
 // Lifecycle relative to HTTP filter:
 //
-//	OnStreamComplete  (HTTP filter -- post-stream attrs NOT yet finalized)
+//	OnStreamComplete  (HTTP filter: post-stream attrs NOT yet finalized)
 //	  [Envoy finalizes StreamInfo]
-//	on_access_logger_log  (access logger -- all attrs finalized)
+//	on_access_logger_log  (access logger: all attrs finalized)
 //	  [access log flush]
-//	OnDestroy  (HTTP filter -- safe to clean up correlation state here)
+//	OnDestroy  (HTTP filter: safe to clean up correlation state here)
 //
 // See AccessLogger, AccessLoggerFactory, and AccessLoggerConfigFactory for
 // the interfaces to implement. Register via luwes.RegisterAccessLogger.
@@ -105,6 +105,27 @@ type AccessLoggerHandle interface {
 
 	// GetWorkerIndex returns the worker index for this access log event.
 	GetWorkerIndex() uint32
+
+	// GetTraceID returns the trace ID from the active span, if tracing is enabled.
+	GetTraceID() (UnsafeEnvoyBuffer, bool)
+
+	// GetSpanID returns the span ID from the active span, if tracing is enabled.
+	GetSpanID() (UnsafeEnvoyBuffer, bool)
+
+	// IsTraceSampled reports whether the request was sampled for tracing.
+	IsTraceSampled() bool
+
+	// GetLocalReplyBody returns the body Envoy sent in a local reply.
+	// Non-empty only when Envoy generated the response (timeout, circuit breaker, etc.).
+	GetLocalReplyBody() (UnsafeEnvoyBuffer, bool)
+
+	// GetUpstreamPoolReadyDurationNs returns the nanoseconds spent waiting for
+	// an upstream connection from the pool. -1 if unavailable.
+	GetUpstreamPoolReadyDurationNs() int64
+
+	// GetUpstreamRequestAttemptCount returns how many times the request was
+	// attempted upstream (>1 means retries occurred).
+	GetUpstreamRequestAttemptCount() uint32
 
 	// Log emits a message via Envoy's logging system.
 	Log(level LogLevel, format string, args ...any)

@@ -13,9 +13,14 @@ Two storage backends, selected by `REQUI_MODE`:
 
 ```
 Envoy worker thread
-  -> request-ui sahl filter
-     -> response path: collects headers, body (optional), error signals
-     -> stream completion: reads final attributes, sends sink.Record to channel
+  -> request-ui sahl filter (HTTP filter)
+     -> response headers: collect method, path, host, upstream address, error_details
+       -> deposits partial Record into pendingRecords (keyed by x-request-id)
+  -> request-ui access logger (fires after stream finalization)
+     -> reads finalized: duration, byte counts, wire bytes, response flags,
+        code_details, upstream_failure, protocol, retry count, cx pool time,
+        trace/span IDs, local reply body
+     -> pops Record from pendingRecords, enriches, sends to sink channel
   -> sink goroutine (100ms batch INSERT via COPY)
      -> Postgres: requests table
      -> broadcaster: fan-out to SSE subscribers
@@ -35,24 +40,32 @@ Every request gets one row in the `requests` table:
 | Field | Source | Notes |
 |-------|--------|-------|
 | `request_id` | `x-request-id` header | Envoy generates this; correlation key |
-| `method` | `AttributeIDRequestMethod` | GET, POST, etc. |
-| `path` | `AttributeIDRequestPath` | full path including query |
-| `host` | `AttributeIDRequestHost` | `:authority` |
-| `trace_id` | active span `GetTraceID()` | empty if no tracing provider |
-| `span_id` | active span `GetSpanID()` | empty if no tracing provider |
+| `method` | request header `:method` | GET, POST, etc. |
+| `path` | request header `:path` | full path including query |
+| `host` | request header `:authority` | virtual host |
+| `trace_id` | access logger `GetTraceID()` | empty if no tracing provider |
+| `span_id` | access logger `GetSpanID()` | empty if no tracing provider |
+| `trace_sampled` | access logger `IsTraceSampled()` | whether request was sampled |
 | `request_headers` | `chunk.Headers.GetAll()` (response phase) | JSON array `[[k,v],...]` |
 | `request_body` | `r.Body()` (request phase, optional) | truncated at `max_body_bytes` |
-| `upstream_status` | derived from `response_code` attribute | e.g. "200", "503" |
+| `request_protocol` | `AttributeIDRequestProtocol` | HTTP/1.1, HTTP/2, HTTP/3 |
+| `upstream_status` | HTTP status from response headers | e.g. "200", "503" |
 | `upstream_address` | `AttributeIDUpstreamAddress` | IP:port of selected upstream host |
+| `upstream_local_address` | `AttributeIDUpstreamLocalAddress` | our side of the upstream connection |
+| `upstream_request_attempts` | `GetUpstreamRequestAttemptCount()` | >1 means retries occurred |
+| `upstream_cx_pool_ready_ms` | `GetUpstreamPoolReadyDurationNs()` | wait time for upstream connection |
 | `response_headers` | `chunk.Headers.GetAll()` (response headers call) | JSON array |
 | `response_body` | response body buffer (optional) | truncated at `max_body_bytes` |
-| `error_details` | `OnLocalReply` details string | Envoy-generated errors only |
-| `response_flags` | `AttributeIDResponseFlags` | see table below |
+| `error_details` | `OnLocalReply` via `w.LocalReplyDetails()` | Envoy-generated errors only |
+| `response_flags` | `GetResponseFlags()` bitmask converted to string | see table below |
 | `response_code_details` | `AttributeIDResponseCodeDetails` | e.g. "via_upstream", "response_timeout" |
 | `upstream_failure` | `AttributeIDUpstreamTransportFailureReason` | TLS/transport failures |
-| `duration_ms` | `AttributeIDRequestDuration` (ns / 1e6) | full request duration |
-| `request_size_bytes` | `AttributeIDRequestSize` | bytes received from downstream |
-| `response_size_bytes` | `AttributeIDResponseSize` | bytes sent to downstream |
+| `local_reply_body` | `GetLocalReplyBody()` | body of Envoy-synthesized responses |
+| `duration_ms` | `GetTimingInfo().RequestCompleteDurationNs` | full stream duration |
+| `request_size_bytes` | `GetBytesInfo().BytesReceived` | bytes received from downstream |
+| `response_size_bytes` | `GetBytesInfo().BytesSent` | bytes sent to downstream |
+| `wire_bytes_received` | `GetBytesInfo().WireBytesReceived` | includes TLS overhead |
+| `wire_bytes_sent` | `GetBytesInfo().WireBytesSent` | includes TLS overhead |
 | `response_code` | `AttributeIDResponseCode` | final HTTP status code |
 | `has_error` | derived | true when any error signal is set |
 
@@ -350,36 +363,49 @@ sahl/examples/request-ui/
 
 ## sahl API additions in this example
 
-This example required extending sahl with three new methods on `*Writer`:
+### Writer
 
 ```go
-// GetAttributeString, GetAttributeNumber, GetAttributeBool --
+// GetAttributeString, GetAttributeNumber, GetAttributeBool:
 // delegate to the underlying handle; valid in any callback.
 func (w *Writer) GetAttributeString(id shared.AttributeID) (shared.UnsafeEnvoyBuffer, bool)
 func (w *Writer) GetAttributeNumber(id shared.AttributeID) (float64, bool)
 func (w *Writer) GetAttributeBool(id shared.AttributeID) (bool, bool)
 
 // ActiveSpan returns the Envoy tracing span for the current stream.
-// Returns nil if no tracing provider is configured.
 func (w *Writer) ActiveSpan() shared.Span
+
+// LocalReplyDetails returns the details string from the most recent
+// OnLocalReply callback (e.g. "response_timeout", "circuit_breaker_overflow").
+// Non-empty only when Envoy generated the response; empty for upstream responses.
+func (w *Writer) LocalReplyDetails() string
 ```
 
-And one addition to `sahl.Header`:
+### AccessLoggerHandle (new in luwes)
+
+The access logger receives a fully finalized `AccessLoggerHandle` after stream teardown:
 
 ```go
-// GetAll returns all request headers as unsafe key-value pairs.
-// Valid only during the current callback.
-func (h *Header) GetAll() [][2]shared.UnsafeEnvoyBuffer
-```
-
-And `ResponseChunk` now carries the full response header map during the headers call:
-
-```go
-type ResponseChunk struct {
-    // ...
-    // Headers is the full response HeaderMap, available only during the
-    // headers call (StatusCode != 0, Data == nil). Nil during body calls.
-    Headers shared.HeaderMap
-    // ...
-}
+// Timing: all durations in nanoseconds, -1 = unavailable.
+h.GetTimingInfo() TimingInfo
+// Bytes: downstream bytes received/sent, wire bytes (including TLS overhead).
+h.GetBytesInfo() BytesInfo
+// Flags: uint64 bitmask of CoreResponseFlag enum, converted to "UF,UT" style string.
+h.GetResponseFlags() uint64
+// Response code, code details, transport failure reason.
+h.GetResponseCode() uint32
+h.GetAttributeString(AttributeIDResponseCodeDetails)
+h.GetAttributeString(AttributeIDUpstreamTransportFailureReason)
+// Upstream connection pool wait, retry count, local address.
+h.GetUpstreamPoolReadyDurationNs() int64
+h.GetUpstreamRequestAttemptCount() uint32
+h.GetAttributeString(AttributeIDUpstreamLocalAddress)
+// Tracing.
+h.GetTraceID() (UnsafeEnvoyBuffer, bool)
+h.GetSpanID() (UnsafeEnvoyBuffer, bool)
+h.IsTraceSampled() bool
+// Local reply body (Envoy-synthesized response body).
+h.GetLocalReplyBody() (UnsafeEnvoyBuffer, bool)
+// Request/response headers (all finalized).
+h.GetHeader(headerType HttpHeaderType, key string) (UnsafeEnvoyBuffer, bool)
 ```

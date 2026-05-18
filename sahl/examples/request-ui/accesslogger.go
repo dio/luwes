@@ -121,6 +121,42 @@ func (l *alLogger) OnLog(h shared.AccessLoggerHandle, logType shared.AccessLogTy
 		r.UpstreamFailure = v.ToString()
 	}
 
+	// Wire bytes (TLS overhead etc.)
+	r.WireBytesReceived = b.WireBytesReceived
+	r.WireBytesSent = b.WireBytesSent
+
+	// Upstream connection pool wait time.
+	if ns := h.GetUpstreamPoolReadyDurationNs(); ns >= 0 {
+		r.UpstreamCxPoolReadyMs = float64(ns) / 1e6
+	}
+
+	// Upstream retry count (>1 means retries occurred).
+	r.UpstreamRequestAttempts = h.GetUpstreamRequestAttemptCount()
+
+	// Upstream local address (our side of the upstream connection).
+	if v, ok := h.GetAttributeString(shared.AttributeIDUpstreamLocalAddress); ok && v.Len > 0 {
+		r.UpstreamLocalAddress = v.ToString()
+	}
+
+	// Request protocol (HTTP/1.1, HTTP/2, HTTP/3).
+	if v, ok := h.GetAttributeString(shared.AttributeIDRequestProtocol); ok && v.Len > 0 {
+		r.RequestProtocol = v.ToString()
+	}
+
+	// Tracing from the access logger (more reliable than HTTP filter span).
+	if v, ok := h.GetTraceID(); ok && v.Len > 0 {
+		r.TraceIDFinal = v.ToString()
+	}
+	if v, ok := h.GetSpanID(); ok && v.Len > 0 {
+		r.SpanIDFinal = v.ToString()
+	}
+	r.TraceSampled = h.IsTraceSampled()
+
+	// Local reply body (for Envoy-generated 504/503/etc. responses).
+	if v, ok := h.GetLocalReplyBody(); ok && v.Len > 0 {
+		r.LocalReplyBody = v.ToString()
+	}
+
 	r.HasError = r.ErrorDetails != "" ||
 		r.UpstreamFailure != "" ||
 		(r.ResponseFlags != "" && containsErrorFlag(r.ResponseFlags)) ||

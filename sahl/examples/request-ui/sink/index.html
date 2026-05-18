@@ -284,8 +284,9 @@ function showDetail(id) {
   detailContent.innerHTML = ''
     + '<div class="section"><h3>Identity</h3><div class="kv">'
     + kv('request_id', r.request_id)
-    + kv('trace_id', r.trace_id)
-    + kv('span_id', r.span_id)
+    + kv('trace_id', r.trace_id_final || r.trace_id)
+    + kv('span_id', r.span_id_final || r.span_id)
+    + kv('trace_sampled', r.trace_sampled ? 'yes' : '')
     + kv('timestamp', r.timestamp)
     + '</div></div>'
 
@@ -293,7 +294,9 @@ function showDetail(id) {
     + kv('method', r.method)
     + kv('path', r.path)
     + kv('host', r.host)
+    + kv('protocol', r.request_protocol)
     + kv('request_size', r.request_size_bytes ? r.request_size_bytes + ' B' : '')
+    + kv('wire_bytes_received', r.wire_bytes_received ? r.wire_bytes_received + ' B' : '')
     + '</div></div>'
 
     + '<div class="section"><h3>Request Headers</h3>'
@@ -306,8 +309,13 @@ function showDetail(id) {
     + kv('status (upstream)', r.upstream_status, r.upstream_status && r.upstream_status[0] >= '4' ? 'err' : 'ok')
     + kv('response_code (final)', r.response_code, sc)
     + kv('upstream_address', r.upstream_address)
+    + kv('upstream_local_address', r.upstream_local_address)
+    + kv('upstream_attempts', r.upstream_request_attempts > 1 ? r.upstream_request_attempts : '')
+    + kv('upstream_cx_pool_ready', r.upstream_cx_pool_ready_ms ? r.upstream_cx_pool_ready_ms.toFixed(3) + ' ms' : '')
     + kv('response_size', r.response_size_bytes ? r.response_size_bytes + ' B' : '')
+    + kv('wire_bytes_sent', r.wire_bytes_sent ? r.wire_bytes_sent + ' B' : '')
     + kv('duration_ms', r.duration_ms ? r.duration_ms.toFixed(2) + ' ms' : '')
+    + (r.local_reply_body ? kv('local_reply_body', r.local_reply_body, 'err') : '')
     + '</div></div>'
 
     + '<div class="section"><h3>Response Headers</h3>'
