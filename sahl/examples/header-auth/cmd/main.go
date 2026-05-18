@@ -5,9 +5,9 @@ import (
 
 	"github.com/dio/luwes/sahl"
 
-	headerauthsahl "github.com/dio/luwes/sahl/examples/header-auth"
+	headerauth "github.com/dio/luwes/sahl/examples/header-auth"
 )
 
 func main() {
-	sdk.RegisterRaw("header-auth", sahl.Factory(headerauthsahl.Handler))
+	sdk.RegisterRaw("header-auth", sahl.Factory(headerauth.Handler))
 }
