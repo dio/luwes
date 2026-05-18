@@ -125,6 +125,10 @@ type Filter struct {
 type Factory struct {
 	cfg  Config
 	pool sync.Pool
+	// pendingRecords holds per-request state deposited by OnStreamComplete
+	// and consumed by the access logger OnLog. Keyed by x-request-id.
+	// OnDestroy removes any entry the access logger did not consume.
+	pendingRecords sync.Map
 }
 
 // NewFactory parses config and initialises the filter pool.
@@ -257,41 +261,19 @@ func (f *Filter) OnLocalReply(_ uint32, details shared.UnsafeEnvoyBuffer, _ bool
 	return shared.LocalReplyStatusContinue
 }
 
-// OnStreamComplete reads the final request attributes, tags the active span,
-// writes all fields to dynamic metadata, and emits the log record.
+// OnStreamComplete tags the active span and deposits the partial record into
+// pendingRecords for the access logger to enrich and emit.
 //
-// All numeric and string attributes (duration, flags, code_details, upstream
-// failure reason) are only fully populated here, after the stream resolves.
+// Finalized fields (duration, byte counts, response flags, code_details) are
+// NOT available here: the ABI exposes them only in on_access_logger_log, which
+// fires after this callback. See accesslogger.go.
+//
+// If no access logger is wired, OnDestroy cleans up the deposited record.
 func (f *Filter) OnStreamComplete() {
 	r := &f.rec
 	h := f.handle
 
-	// Numeric attributes.
-	if v, ok := h.GetAttributeNumber(shared.AttributeIDRequestDuration); ok {
-		r.durationMs = v / 1e6 // nanoseconds -> milliseconds
-	}
-	if v, ok := h.GetAttributeNumber(shared.AttributeIDRequestSize); ok {
-		r.requestSizeBytes = v
-	}
-	if v, ok := h.GetAttributeNumber(shared.AttributeIDResponseSize); ok {
-		r.responseSizeBytes = v
-	}
-	if v, ok := h.GetAttributeNumber(shared.AttributeIDResponseCode); ok {
-		r.responseCode = v
-	}
-
-	// String error attributes.
-	if v, ok := h.GetAttributeString(shared.AttributeIDResponseFlags); ok && v.Len > 0 {
-		r.responseFlags = v.ToString()
-	}
-	if v, ok := h.GetAttributeString(shared.AttributeIDResponseCodeDetails); ok && v.Len > 0 {
-		r.responseCodeDetails = v.ToString()
-	}
-	if v, ok := h.GetAttributeString(shared.AttributeIDUpstreamTransportFailureReason); ok && v.Len > 0 {
-		r.upstreamFailure = v.ToString()
-	}
-
-	// Tag the active span. All fields become span attributes in the OTel backend.
+	// Tag the active span with fields available at this point.
 	if span := h.GetActiveSpan(); span != nil {
 		span.SetTag("request.id", r.requestID)
 		span.SetTag("request.method", r.method)
@@ -299,58 +281,56 @@ func (f *Filter) OnStreamComplete() {
 		span.SetTag("request.host", r.host)
 		span.SetTag("response.status", r.upstreamStatus)
 		span.SetTag("upstream.address", r.upstreamAddress)
-		span.SetTag("response.flags", r.responseFlags)
-		span.SetTag("response.code_details", r.responseCodeDetails)
 		if r.errorDetails != "" {
 			span.SetTag("error", "true")
 			span.SetTag("error.details", r.errorDetails)
 		}
-		if r.upstreamFailure != "" {
-			span.SetTag("upstream.transport_failure", r.upstreamFailure)
+	}
+
+	// Write known fields to dynamic metadata so access log format strings can
+	// reference them immediately. Finalized fields (flags, code_details) will
+	// be written by the access logger after on_access_logger_log fires.
+	if r.requestID != "" {
+		h.SetMetadata(metaNS, "request_id", r.requestID)
+		h.SetMetadata(metaNS, "method", r.method)
+		h.SetMetadata(metaNS, "path", r.path)
+		h.SetMetadata(metaNS, "host", r.host)
+		h.SetMetadata(metaNS, "trace_id", r.traceID)
+		h.SetMetadata(metaNS, "span_id", r.spanID)
+		h.SetMetadata(metaNS, "upstream_status", r.upstreamStatus)
+		h.SetMetadata(metaNS, "upstream_address", r.upstreamAddress)
+		if r.errorDetails != "" {
+			h.SetMetadata(metaNS, "error_details", r.errorDetails)
+		}
+		if len(r.requestBody) > 0 {
+			h.SetMetadata(metaNS, "request_body", string(r.requestBody))
+		}
+		if len(r.responseBody) > 0 {
+			h.SetMetadata(metaNS, "response_body", string(r.responseBody))
 		}
 	}
 
-	// Write all fields to dynamic metadata for access log formatters.
-	setMeta := func(key, value string) {
-		if value != "" {
-			h.SetMetadata(metaNS, key, value)
-		}
-	}
-	setMeta("request_id", r.requestID)
-	setMeta("method", r.method)
-	setMeta("path", r.path)
-	setMeta("host", r.host)
-	setMeta("trace_id", r.traceID)
-	setMeta("span_id", r.spanID)
-	setMeta("upstream_status", r.upstreamStatus)
-	setMeta("upstream_address", r.upstreamAddress)
-	setMeta("response_flags", r.responseFlags)
-	setMeta("error_details", r.errorDetails)
-	setMeta("response_code_details", r.responseCodeDetails)
-	setMeta("upstream_failure", r.upstreamFailure)
-	if len(r.requestBody) > 0 {
-		h.SetMetadata(metaNS, "request_body", string(r.requestBody))
-	}
-	if len(r.responseBody) > 0 {
-		h.SetMetadata(metaNS, "response_body", string(r.responseBody))
-	}
-
-	// Emit structured log record (appears in Envoy error log).
-	if h.LogEnabled(shared.LogLevelInfo) {
-		h.Log(shared.LogLevelInfo,
-			"req id=%s method=%s path=%s host=%s status=%.0f upstream=%s "+
-				"flags=%s duration=%.2fms req_bytes=%.0f resp_bytes=%.0f "+
-				"error_details=%s code_details=%s upstream_failure=%s "+
-				"trace=%s span=%s",
-			r.requestID, r.method, r.path, r.host, r.responseCode,
-			r.upstreamAddress, r.responseFlags, r.durationMs,
-			r.requestSizeBytes, r.responseSizeBytes,
-			r.errorDetails, r.responseCodeDetails, r.upstreamFailure,
-			r.traceID, r.spanID,
-		)
+	// Deposit partial record for the access logger. Take a copy of the record
+	// because the filter will be returned to the pool after OnDestroy; the
+	// access logger fires between OnStreamComplete and OnDestroy so the pointer
+	// must outlive this call.
+	if r.requestID != "" {
+		deposited := *r // copy
+		f.factory.pendingRecords.Store(r.requestID, &deposited)
 	}
 
 	f.handle = nil
+	// Note: do NOT put to pool here. OnDestroy handles pool return.
+}
+
+// OnDestroy is called after the access logger has fired (if wired).
+// It removes any record the access logger did not consume and returns the
+// filter to the pool.
+func (f *Filter) OnDestroy() {
+	if f.rec.requestID != "" {
+		f.factory.pendingRecords.Delete(f.rec.requestID)
+	}
+	f.rec = record{}
 	f.factory.pool.Put(f)
 }
 

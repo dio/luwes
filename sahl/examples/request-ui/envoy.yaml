@@ -15,6 +15,15 @@ static_resources:
                   - name: envoy.access_loggers.stdout
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                  - name: envoy.access_loggers.dynamic_modules
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.dynamic_modules.v3.DynamicModuleAccessLog
+                      dynamic_module_config:
+                        name: request-ui
+                      logger_name: request-ui
+                      logger_config:
+                        "@type": type.googleapis.com/google.protobuf.StringValue
+                        value: '{}'
                       log_format:
                         json_format:
                           ts:           "%START_TIME%"

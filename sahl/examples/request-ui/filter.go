@@ -58,7 +58,7 @@ var statePool = sync.Pool{New: func() any { return &reqState{} }}
 
 // Register wires the filter into the sahl registry.
 // Call from init() in cmd/main.go after constructing the sink.
-func Register(name string, s *requestuisink.Sink) {
+func Register(name string, s *requestuisink.Sink, pending *PendingRecords) {
 	sahl.RegisterWithConfigAndResponse(
 		name,
 		func(h sahl.ConfigHandle) error {
@@ -127,8 +127,9 @@ func Register(name string, s *requestuisink.Sink) {
 					*chunk.Context = st
 					return
 				}
-				// No body recording: emit now and return state to pool.
-				emit(w, chunk.StatusCode, st, s)
+				// Deposit partial record; the access logger enriches and sends it.
+				nr := buildRecord(chunk.StatusCode, st)
+				pending.Store(st.requestID, nr)
 				*st = reqState{}
 				statePool.Put(st)
 				return
@@ -150,7 +151,8 @@ func Register(name string, s *requestuisink.Sink) {
 					}
 					st.responseBody = string(data)
 				}
-				emit(w, chunk.StatusCode, st, s)
+				nr := buildRecord(chunk.StatusCode, st)
+				pending.Store(st.requestID, nr)
 				*st = reqState{}
 				statePool.Put(st)
 			}
@@ -158,7 +160,10 @@ func Register(name string, s *requestuisink.Sink) {
 	)
 }
 
-func emit(w *sahl.Writer, statusCode int, st *reqState, s *requestuisink.Sink) {
+// buildRecord constructs a partial Record from state available at response headers time.
+// Finalized fields (duration, byte counts, flags, code_details) are left zero;
+// the access logger sets them in OnLog after stream finalization.
+func buildRecord(statusCode int, st *reqState) *requestuisink.Record {
 	r := &requestuisink.Record{
 		RequestID:       st.requestID,
 		Method:          st.method,
@@ -170,8 +175,9 @@ func emit(w *sahl.Writer, statusCode int, st *reqState, s *requestuisink.Sink) {
 		UpstreamAddress: st.upstreamAddress,
 		ResponseBody:    st.responseBody,
 		ErrorDetails:    st.errorDetails,
+		ResponseCode:    float64(statusCode),
+		UpstreamStatus:  statusStr(statusCode),
 	}
-
 	if len(st.requestHeaders) > 0 {
 		if b, err := json.Marshal(st.requestHeaders); err == nil {
 			r.RequestHeaders = string(b)
@@ -182,37 +188,7 @@ func emit(w *sahl.Writer, statusCode int, st *reqState, s *requestuisink.Sink) {
 			r.ResponseHeaders = string(b)
 		}
 	}
-
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDRequestDuration); ok {
-		r.DurationMs = v / 1e6
-	}
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDRequestSize); ok {
-		r.RequestSizeBytes = v
-	}
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDResponseSize); ok {
-		r.ResponseSizeBytes = v
-	}
-	if v, ok := w.GetAttributeNumber(shared.AttributeIDResponseCode); ok {
-		r.ResponseCode = v
-		r.UpstreamStatus = statusStr(int(v))
-	} else {
-		// AttributeIDResponseCode unavailable on macOS Envoy builds; use the
-		// status code from the response headers callback instead.
-		r.ResponseCode = float64(statusCode)
-		r.UpstreamStatus = statusStr(statusCode)
-	}
-	if v, ok := w.GetAttributeString(shared.AttributeIDResponseFlags); ok && v.Len > 0 {
-		r.ResponseFlags = v.ToString()
-	}
-	if v, ok := w.GetAttributeString(shared.AttributeIDResponseCodeDetails); ok && v.Len > 0 {
-		r.ResponseCodeDetails = v.ToString()
-	}
-	if v, ok := w.GetAttributeString(shared.AttributeIDUpstreamTransportFailureReason); ok && v.Len > 0 {
-		r.UpstreamFailure = v.ToString()
-	}
-
-	r.HasError = hasError(r)
-	s.Send(r)
+	return r
 }
 
 func hasError(r *requestuisink.Record) bool {
