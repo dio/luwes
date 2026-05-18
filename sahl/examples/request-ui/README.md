@@ -93,6 +93,16 @@ Flags are set on the final `response_flags` attribute in `OnStreamComplete`.
 They are NOT available in `OnResponseHeaders`: only after the full stream
 resolves. The filter reads them via `w.GetAttributeString(AttributeIDResponseFlags)`.
 
+> **Envoy 1.38 limitation:** `response.flags`, `response.code_details`,
+> `request.duration`, `request.size`, and `response.size` return "Unsupported
+> attribute ID" when called from HTTP filter callbacks (`OnResponseHeaders`,
+> `OnResponseBody`). These attributes are only finalized at stream completion
+> and are only accessible via the dynamic module **access logger** ABI
+> (`envoy_dynamic_module_on_access_logger_log`), which fires post-stream.
+> Until luwes implements the access logger ABI, `duration_ms`, byte sizes,
+> `response_flags`, and `response_code_details` will be zero/empty in
+> all records.
+
 ## `error_details` vs `response_flags` vs `response_code_details`
 
 Three independent error signals:
