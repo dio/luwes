@@ -1,5 +1,5 @@
 # abi/VERSION
 # Vendored abi.h provenance. Update via: scripts/sync-abi.sh <commit>
-ENVOY_COMMIT=eb069979b61614a7b3a53b13778e78ba2a7965df
+ENVOY_COMMIT=f6ab2f231c3fc81bd1d068bcd7494a003d97baa5
 ENVOY_RELEASE=v1.38.0
-ABI_VERSION=v0.1.0
+ABI_VERSION=v0.2.0
